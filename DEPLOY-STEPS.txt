@@ -1,0 +1,15 @@
+YOSHI RIDE 最短セットアップ
+
+1) Supabase > Edge Functions > Deploy a new function > Via Editor
+2) Function name = cycle-route
+3) supabase/functions/cycle-route/index.ts の中身を貼る
+4) Deploy function
+5) cycle-route > Settings > Verify JWT with legacy secret = OFF > Save
+
+※ ORS_API_KEY はKENJI MODEで登録済みのものをそのまま使えます。
+
+6) GitHubで新規リポジトリ yoshi-ride を作成
+7) このZIPのファイルを全部アップロード
+8) Settings > Pages > Deploy from a branch > main / root
+9) https://yoshiokayuta2-lgtm.github.io/yoshi-ride/ を開く
+10) スマホで位置情報を許可 → ホーム画面に追加

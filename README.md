@@ -1,0 +1,68 @@
+# YOSHI RIDE v1.0
+
+個人用ロードバイクPWA。20周年アプリ / KENJI MODEとは完全に別のGitHub Pagesアプリとして動きます。
+
+## 入っている機能
+- 現在地 → 目的地のロードバイクルート
+- 距離 / 目安時間 / 獲得標高 / 最大斜度
+- 標高グラフ、上り区間一覧、地図上の斜度色分け
+- ルートモード
+  - バランス
+  - サイクリングロード優先
+  - 坂トレ優先（3段階）
+- 実走GPS記録
+  - 距離 / 時間 / 速度 / 最大速度 / 獲得標高（GPS概算）
+  - 走った軌跡を端末に保存
+- 走行履歴
+- GPX書き出し
+- 全記録JSONバックアップ / 復元
+- PWAホーム画面追加
+- 走行中のScreen Wake Lock
+
+## ルートモードの仕組み
+OpenRouteServiceの `cycling-road` を利用します。
+
+- サイクリングロード優先: 最大3候補を取り、OSMの `highway=cycleway` と判定される区間の比率を重視して選択します。
+- 坂トレ: `steepness_difficulty` を指定し、候補の獲得標高・最大斜度・上り区間を比較して強いルートを選択します。
+- OpenRouteServiceの代替ルートは100km制限があるため、このアプリでは直線距離65km以上では候補比較を使わず単一ルートにフォールバックします。
+
+※ OSM側の道路タグが未整備の場所では「サイクリングロード優先」の精度が下がります。
+
+## 走行記録の保存
+v1.0ではブラウザの IndexedDB に保存します。個人用として、サーバーへGPS軌跡を送らない設計です。
+
+- 同じ端末・同じブラウザ/PWAなら残ります。
+- 機種変更に備え、LOG画面の「記録をバックアップ」を使用してください。
+- GPXは個別走行ごとに出力できます。
+
+## セットアップ
+### 1. Supabase Edge Function
+既存のSupabaseプロジェクトに、別Functionとして作成します。
+
+Function name:
+`cycle-route`
+
+ZIP内:
+`supabase/functions/cycle-route/index.ts`
+
+をEditorに貼ってDeployしてください。
+
+`Settings > Verify JWT with legacy secret` は **OFF**。
+
+既にKENJI MODE用に `ORS_API_KEY` をSecretsへ登録済みなら、追加Secretは不要です。
+
+### 2. GitHub Pages
+新しいリポジトリ（例: `yoshi-ride`）を作り、このZIPの中身をルートへアップロードします。
+
+`Settings > Pages > Deploy from a branch > main / root`
+
+公開後の例:
+`https://yoshiokayuta2-lgtm.github.io/yoshi-ride/`
+
+### 3. スマホ
+Safari / Chromeで開き、ホーム画面に追加するとPWAとして使えます。
+
+## 重要な制約
+WebアプリのGPSは、OSがブラウザ/PWAをバックグラウンド停止すると記録が止まることがあります。走行中は「画面常時ON」を利用し、アプリを前面で開いた状態を推奨します。
+
+安全上、表示ルートより現地の標識・通行規制・道路状況を優先してください。

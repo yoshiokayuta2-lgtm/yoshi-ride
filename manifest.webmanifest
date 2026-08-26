@@ -1,0 +1,15 @@
+{
+  "name":"YOSHI RIDE",
+  "short_name":"YOSHI RIDE",
+  "description":"ロードバイクのルート計画・斜度分析・実走記録",
+  "start_url":"./",
+  "scope":"./",
+  "display":"standalone",
+  "background_color":"#edf2f5",
+  "theme_color":"#0d2138",
+  "orientation":"portrait-primary",
+  "icons":[
+    {"src":"assets/icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"assets/icon-512.png","sizes":"512x512","type":"image/png"}
+  ]
+}
