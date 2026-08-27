@@ -1,15 +1,20 @@
-YOSHI RIDE 最短セットアップ
+YOSHI RIDE v1.1 更新手順
 
-1) Supabase > Edge Functions > Deploy a new function > Via Editor
-2) Function name = cycle-route
-3) supabase/functions/cycle-route/index.ts の中身を貼る
-4) Deploy function
-5) cycle-route > Settings > Verify JWT with legacy secret = OFF > Save
+【GitHub】
+1) yoshi-ride リポジトリに、このZIPの中身を上書きアップロード
+2) main ブランチへ Commit
+3) GitHub Pages の反映を待って再読み込み
 
-※ ORS_API_KEY はKENJI MODEで登録済みのものをそのまま使えます。
+【Supabase】
+4) Edge Functions > cycle-route > Code
+5) supabase/functions/cycle-route/index.ts の中身をv1.1版へ差し替え
+6) Deploy function
+7) Settings > Verify JWT with legacy secret = OFF のまま確認
 
-6) GitHubで新規リポジトリ yoshi-ride を作成
-7) このZIPのファイルを全部アップロード
-8) Settings > Pages > Deploy from a branch > main / root
-9) https://yoshiokayuta2-lgtm.github.io/yoshi-ride/ を開く
-10) スマホで位置情報を許可 → ホーム画面に追加
+※ ORS_API_KEY は既存のものをそのまま利用できます。
+※ v1.1では周辺ジャンル検索も cycle-route 内で処理するため、新しいFunctionやSecretは不要です。
+
+確認ポイント
+- ROUTE画面を開いた時点で地図が表示される
+- 「地図で指定」→ 地図タップで目的地をセットできる
+- ジャンルを押すと現在地周辺の候補が距離順に出る

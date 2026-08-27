@@ -3,13 +3,13 @@
 
 const CONFIG = {
   functionUrl: 'https://sxugznyvbojkfshevpcs.supabase.co/functions/v1/cycle-route',
-  build: '1.0.0',
+  build: '1.1.0',
 };
 
 const $ = (id) => document.getElementById(id);
 const els = {
   tabs:[...document.querySelectorAll('.tab')], views:{route:$('routeView'),ride:$('rideView'),log:$('logView')}, gpsBadge:$('gpsBadge'), installBtn:$('installBtn'),
-  destination:$('destinationInput'), destinationHint:$('destinationHint'), locateBtn:$('locateBtn'), mapPickBtn:$('mapPickBtn'), modeCards:[...document.querySelectorAll('.mode-card')], hillSettings:$('hillSettings'), hillLevel:$('hillLevel'), hillLevelLabel:$('hillLevelLabel'), routeBtn:$('routeBtn'), routeMessage:$('routeMessage'), routeResult:$('routeResult'),
+  destination:$('destinationInput'), destinationHint:$('destinationHint'), locateBtn:$('locateBtn'), mapPickBtn:$('mapPickBtn'), placeRadius:$('placeRadius'), placeCategories:[...document.querySelectorAll('.category-chip')], placeMessage:$('placeMessage'), placeResults:$('placeResults'), modeCards:[...document.querySelectorAll('.mode-card')], hillSettings:$('hillSettings'), hillLevel:$('hillLevel'), hillLevelLabel:$('hillLevelLabel'), routeBtn:$('routeBtn'), routeMessage:$('routeMessage'), routeResult:$('routeResult'),
   statDistance:$('statDistance'), statDuration:$('statDuration'), statAscent:$('statAscent'), statGrade:$('statGrade'), cyclewayPct:$('cyclewayPct'), pavedPct:$('pavedPct'), routeReason:$('routeReason'), routeTitle:$('routeTitle'), elevationChart:$('elevationChart'), climbsList:$('climbsList'), fitRouteBtn:$('fitRouteBtn'), useRouteBtn:$('useRouteBtn'),
   wakeBadge:$('wakeBadge'), rideStateTitle:$('rideStateTitle'), liveSpeed:$('liveSpeed'), liveDistance:$('liveDistance'), liveDuration:$('liveDuration'), liveAscent:$('liveAscent'), liveMaxSpeed:$('liveMaxSpeed'), startRideBtn:$('startRideBtn'), pauseRideBtn:$('pauseRideBtn'), finishRideBtn:$('finishRideBtn'), centerRideBtn:$('centerRideBtn'), plannedRouteLabel:$('plannedRouteLabel'),
   sumRides:$('sumRides'), sumDistance:$('sumDistance'), sumAscent:$('sumAscent'), sumTime:$('sumTime'), exportAllBtn:$('exportAllBtn'), importAllInput:$('importAllInput'), ridesList:$('ridesList'), emptyLog:$('emptyLog'),
@@ -17,8 +17,8 @@ const els = {
 };
 
 const state = {
-  mode:'balanced', hillLevel:2, currentPosition:null, destinationPoint:null, mapPick:false, routeData:null, plannedRoute:null,
-  installPrompt:null, routeMap:null, rideMap:null, historyMap:null, routeLayers:[], rideTrackLayer:null, ridePlannedLayer:null, rideCurrentMarker:null, historyLayer:null,
+  mode:'balanced', hillLevel:2, currentPosition:null, destinationPoint:null, mapPick:false, routeData:null, plannedRoute:null, selectedCategory:null, placeResults:[],
+  installPrompt:null, routeMap:null, rideMap:null, historyMap:null, routeLayers:[], placeMarkers:null, rideTrackLayer:null, ridePlannedLayer:null, rideCurrentMarker:null, historyLayer:null,
   ride:{status:'ready',watchId:null,startTs:0,pauseStarted:0,pausedMs:0,points:[],distanceM:0,ascentM:0,maxSpeedKmh:0,lastAccepted:null,timer:null,wakeLock:null},
   modalRide:null,
 };
@@ -43,15 +43,16 @@ els.tabs.forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));
 
 function initMaps(){
   if(!window.L){setMessage('地図ライブラリを読み込めませんでした。ネット接続を確認してください。','error');return}
-  const base=(map)=>{
+  const base=(map,preferCyclo=false)=>{
     const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'});
     const cyclo=L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',{maxZoom:20,attribution:'CyclOSM © OpenStreetMap contributors'});
-    osm.addTo(map); L.control.layers({'OSM':osm,'CyclOSM':cyclo},null,{position:'topright'}).addTo(map);
+    (preferCyclo?cyclo:osm).addTo(map); L.control.layers({'OSM':osm,'CyclOSM':cyclo},null,{position:'topright'}).addTo(map);
   };
-  state.routeMap=L.map('routeMap',{zoomControl:true}).setView([35.423,136.76],10); base(state.routeMap);
+  state.routeMap=L.map('routeMap',{zoomControl:true}).setView([35.423,136.76],10); base(state.routeMap,true);
+  state.placeMarkers=L.layerGroup().addTo(state.routeMap);
   state.rideMap=L.map('rideMap',{zoomControl:true}).setView([35.423,136.76],11); base(state.rideMap);
   state.historyMap=L.map('historyMap',{zoomControl:true}).setView([35.423,136.76],11); base(state.historyMap);
-  state.routeMap.on('click',e=>{if(!state.mapPick)return;state.destinationPoint={lat:e.latlng.lat,lng:e.latlng.lng,label:'地図で指定'};els.destination.value='地図で指定';state.mapPick=false;els.destinationHint.textContent='地図上の目的地を設定しました。';els.destinationHint.classList.remove('active');drawDestinationMarker();});
+  state.routeMap.on('click',e=>{if(!state.mapPick)return;state.destinationPoint={lat:e.latlng.lat,lng:e.latlng.lng,label:'地図で指定'};els.destination.value='地図で指定';state.mapPick=false;els.mapPickBtn.classList.remove('active');els.mapPickBtn.textContent='地図で指定';els.destinationHint.textContent='地図上の目的地を設定しました。';els.destinationHint.classList.remove('active');clearPlaceSelection();drawDestinationMarker();});
 }
 
 let routeDestinationMarker=null, routeOriginMarker=null;
@@ -66,9 +67,19 @@ async function getCurrentPosition(show=true){
   },err=>{els.gpsBadge.textContent='GPS OFF';els.gpsBadge.classList.remove('ok');reject(new Error(err.code===1?'位置情報の利用を許可してください。':'現在地を取得できませんでした。'));},{enableHighAccuracy:true,timeout:15000,maximumAge:4000}));
 }
 
-els.locateBtn.addEventListener('click',()=>getCurrentPosition().then(()=>showToast('現在地を更新しました')).catch(e=>setMessage(e.message,'error')));
-els.mapPickBtn.addEventListener('click',()=>{state.mapPick=!state.mapPick;els.destinationHint.textContent=state.mapPick?'地図上の行きたい地点をタップしてください。':'地図をタップして目的地を指定することもできます。';els.destinationHint.classList.toggle('active',state.mapPick);if(state.mapPick&&state.routeMap){state.routeMap.getContainer().scrollIntoView({behavior:'smooth',block:'center'});}});
-els.destination.addEventListener('input',()=>{if(els.destination.value!=='地図で指定')state.destinationPoint=null;});
+els.locateBtn.addEventListener('click',()=>getCurrentPosition().then(()=>{showToast('現在地を更新しました');if(state.selectedCategory)searchNearbyPlaces(state.selectedCategory)}).catch(e=>setMessage(e.message,'error')));
+els.mapPickBtn.addEventListener('click',()=>{state.mapPick=!state.mapPick;els.mapPickBtn.classList.toggle('active',state.mapPick);els.mapPickBtn.textContent=state.mapPick?'地図をタップ':'地図で指定';els.destinationHint.textContent=state.mapPick?'地図上の行きたい地点をタップしてください。':'下の地図をタップして目的地を指定することもできます。';els.destinationHint.classList.toggle('active',state.mapPick);if(state.mapPick&&state.routeMap){state.routeMap.getContainer().scrollIntoView({behavior:'smooth',block:'center'});}});
+els.destination.addEventListener('input',()=>{if(els.destination.value!=='地図で指定'){state.destinationPoint=null;clearPlaceSelection();}});
+
+function setPlaceMessage(text,type=''){els.placeMessage.textContent=text||'';els.placeMessage.className='place-message'+(type?' '+type:'');}
+function clearPlaceSelection(){els.placeResults.querySelectorAll('.place-result.selected').forEach(x=>x.classList.remove('selected'));}
+function clearPlaceMarkers(){if(state.placeMarkers)state.placeMarkers.clearLayers();}
+function selectPlace(place){state.routeData=null;state.routeLayers.forEach(l=>l.remove());state.routeLayers=[];els.routeResult.hidden=true;els.routeTitle.textContent='地図から選ぶ';els.fitRouteBtn.textContent='現在地';state.destinationPoint={lat:Number(place.lat),lng:Number(place.lng),label:place.name};els.destination.value=place.name;state.mapPick=false;els.mapPickBtn.classList.remove('active');els.mapPickBtn.textContent='地図で指定';els.destinationHint.textContent=`${place.name} を目的地に設定しました。`;els.destinationHint.classList.remove('active');clearPlaceSelection();const card=els.placeResults.querySelector(`[data-place-id="${CSS.escape(String(place.id))}"]`);if(card)card.classList.add('selected');drawDestinationMarker();if(state.routeMap)state.routeMap.setView([place.lat,place.lng],15);}
+function renderPlaces(places,categoryLabel){state.placeResults=places;els.placeResults.hidden=false;clearPlaceMarkers();if(!places.length){els.placeResults.innerHTML='<div class="place-empty">この範囲では候補が見つかりませんでした。検索範囲を広げてみてください。</div>';return;}els.placeResults.innerHTML=places.map(p=>`<button type="button" class="place-result" data-place-id="${escapeHtml(p.id)}"><span class="place-distance">${(Number(p.distanceM||0)/1000).toFixed(1)} km</span><span class="place-copy"><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.address||categoryLabel||'')}</small></span><span class="place-arrow">›</span></button>`).join('');els.placeResults.querySelectorAll('.place-result').forEach(btn=>btn.addEventListener('click',()=>{const p=places.find(x=>String(x.id)===btn.dataset.placeId);if(p)selectPlace(p)}));
+  const bounds=[];if(state.currentPosition)bounds.push([state.currentPosition.lat,state.currentPosition.lng]);for(const p of places.slice(0,30)){const marker=L.circleMarker([p.lat,p.lng],{radius:6,weight:2,color:'#3974af',fillColor:'#fff',fillOpacity:1}).bindTooltip(p.name,{direction:'top'});marker.on('click',()=>selectPlace(p));state.placeMarkers.addLayer(marker);bounds.push([p.lat,p.lng]);}if(state.routeMap&&bounds.length>1)state.routeMap.fitBounds(L.latLngBounds(bounds).pad(.08));}
+async function searchNearbyPlaces(category){state.selectedCategory=category;els.placeCategories.forEach(b=>b.classList.toggle('active',b.dataset.category===category));setPlaceMessage('現在地周辺を検索中…');els.placeResults.hidden=true;try{const origin=state.currentPosition||await getCurrentPosition(false);const radiusM=Number(els.placeRadius.value||5000);const res=await fetch(CONFIG.functionUrl,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'places',origin:{lat:origin.lat,lng:origin.lng},category,radiusM})});let data={};try{data=await res.json()}catch{}if(!res.ok)throw new Error(data.error||`周辺検索に失敗しました（HTTP ${res.status}）`);renderPlaces(data.places||[],data.categoryLabel||'');setPlaceMessage(`${data.categoryLabel||'周辺スポット'}：${(data.places||[]).length}件`,'success');}catch(e){setPlaceMessage(e.message||'周辺検索に失敗しました。','error');els.placeResults.hidden=true;}}
+els.placeCategories.forEach(btn=>btn.addEventListener('click',()=>searchNearbyPlaces(btn.dataset.category)));
+els.placeRadius.addEventListener('change',()=>{if(state.selectedCategory)searchNearbyPlaces(state.selectedCategory)});
 
 els.modeCards.forEach(card=>card.addEventListener('click',()=>{
   state.mode=card.dataset.mode;els.modeCards.forEach(c=>{const active=c===card;c.classList.toggle('active',active);c.setAttribute('aria-checked',active?'true':'false')});els.hillSettings.hidden=state.mode!=='hill';
@@ -93,13 +104,13 @@ els.routeBtn.addEventListener('click',calculateRoute);
 
 function gradeColor(g){const a=Math.abs(g);if(a<1)return '#74889b';if(a<4)return '#3e8c6a';if(a<7)return '#d19b31';if(a<10)return '#d86542';return '#9a3c4d';}
 function renderRoute(data){
-  els.routeResult.hidden=false;const s=data.summary||{};els.statDistance.textContent=((s.distanceM||0)/1000).toFixed(1);els.statDuration.textContent=fmtEta(s.durationS||0);els.statAscent.textContent=Math.round(s.ascentM||0);els.statGrade.textContent=(s.maxGrade||0).toFixed(1);els.cyclewayPct.textContent=`${Math.round(s.cyclewayPct||0)}%`;els.pavedPct.textContent=`${Math.round(s.pavedPct||0)}%`;els.routeReason.textContent=data.selection?.reason||'おすすめ';els.routeTitle.textContent=data.destination?.label?`→ ${data.destination.label}`:'ルート';
+  clearPlaceMarkers();els.fitRouteBtn.textContent='全体表示';els.routeResult.hidden=false;const s=data.summary||{};els.statDistance.textContent=((s.distanceM||0)/1000).toFixed(1);els.statDuration.textContent=fmtEta(s.durationS||0);els.statAscent.textContent=Math.round(s.ascentM||0);els.statGrade.textContent=(s.maxGrade||0).toFixed(1);els.cyclewayPct.textContent=`${Math.round(s.cyclewayPct||0)}%`;els.pavedPct.textContent=`${Math.round(s.pavedPct||0)}%`;els.routeReason.textContent=data.selection?.reason||'おすすめ';els.routeTitle.textContent=data.destination?.label?`→ ${data.destination.label}`:'ルート';
   drawRouteMap(data.route||[]);renderElevation(data.elevationProfile||[]);renderClimbs(data.climbs||[]);setTimeout(()=>els.routeResult.scrollIntoView({behavior:'smooth',block:'start'}),80);
 }
 function drawRouteMap(points){if(!state.routeMap||!points.length)return;state.routeLayers.forEach(l=>l.remove());state.routeLayers=[];if(routeDestinationMarker){routeDestinationMarker.remove();routeDestinationMarker=null}drawOriginMarker();
   const group=[];for(let i=0;i<points.length-1;i+=4){const chunk=points.slice(i,Math.min(points.length,i+5));if(chunk.length<2)continue;const a=chunk[0],b=chunk[chunk.length-1];const d=haversine(a,b);const g=d>2&&Number.isFinite(a.ele)&&Number.isFinite(b.ele)?((b.ele-a.ele)/d*100):0;const line=L.polyline(chunk.map(p=>[p.lat,p.lng]),{color:gradeColor(g),weight:6,opacity:.88,lineCap:'round'}).addTo(state.routeMap);state.routeLayers.push(line);group.push(...chunk.map(p=>[p.lat,p.lng]));}
   const last=points[points.length-1];state.destinationPoint={lat:last.lat,lng:last.lng,label:state.routeData?.destination?.label||'目的地'};drawDestinationMarker();const bounds=L.latLngBounds(points.map(p=>[p.lat,p.lng]));state.routeMap.fitBounds(bounds.pad(.08));}
-els.fitRouteBtn.addEventListener('click',()=>{if(state.routeData?.route?.length)state.routeMap.fitBounds(L.latLngBounds(state.routeData.route.map(p=>[p.lat,p.lng])).pad(.08));});
+els.fitRouteBtn.addEventListener('click',()=>{if(state.routeData?.route?.length){state.routeMap.fitBounds(L.latLngBounds(state.routeData.route.map(p=>[p.lat,p.lng])).pad(.08));return;}if(state.currentPosition)state.routeMap.setView([state.currentPosition.lat,state.currentPosition.lng],14);else getCurrentPosition().catch(e=>setMessage(e.message,'error'));});
 
 function renderElevation(profile){
   if(!profile.length){els.elevationChart.innerHTML='<div class="no-climbs">標高データを取得できませんでした。</div>';return}
@@ -163,7 +174,7 @@ els.importAllInput.addEventListener('change',async()=>{const f=els.importAllInpu
 
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();state.installPrompt=e;els.installBtn.hidden=false});els.installBtn.addEventListener('click',async()=>{if(!state.installPrompt)return;state.installPrompt.prompt();await state.installPrompt.userChoice;state.installPrompt=null;els.installBtn.hidden=true});
 
-async function registerSW(){if('serviceWorker'in navigator)try{await navigator.serviceWorker.register('./service-worker.js?v=100')}catch{}}
+async function registerSW(){if('serviceWorker'in navigator)try{await navigator.serviceWorker.register('./service-worker.js?v=110')}catch{}}
 
 async function boot(){initMaps();registerSW();RideDB.open().catch(()=>{});renderRideLog();getCurrentPosition(false).catch(()=>{});console.info(`YOSHI RIDE v${CONFIG.build}`)}
 boot();

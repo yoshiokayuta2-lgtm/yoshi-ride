@@ -42,6 +42,71 @@ function metrics(feature:any){
   const cyclewayPct=summaryAmount(wt,[6]);const pavedPct=summaryAmount(sf,[1,3,4,14]);const stateRoadPct=summaryAmount(wt,[1]);const suitabilityPct=summaryAmount(suit,[8,9,10]);const profile=makeProfiles(feature?.geometry?.coordinates||[]);
   return {distanceM:Number(summary.distance||0),durationS:Number(summary.duration||0),ascentM:Number(summary.ascent||0),descentM:Number(summary.descent||0),cyclewayPct,pavedPct,stateRoadPct,suitabilityPct,...profile};
 }
+
+const PLACE_CATEGORIES: Record<string, { label: string; clauses: string[]; fallback: string }> = {
+  cafe: {
+    label: 'カフェ・パン', fallback: 'カフェ・パン',
+    clauses: ['["amenity"="cafe"]["name"]','["shop"="bakery"]["name"]','["shop"="confectionery"]["name"]','["shop"="coffee"]["name"]'],
+  },
+  food: {
+    label: 'グルメ', fallback: '飲食店',
+    clauses: ['["amenity"="restaurant"]["name"]','["amenity"="fast_food"]["name"]','["amenity"="food_court"]["name"]'],
+  },
+  convenience: {
+    label: 'コンビニ', fallback: 'コンビニ',
+    clauses: ['["shop"="convenience"]["name"]'],
+  },
+  onsen: {
+    label: '温泉', fallback: '温浴施設',
+    clauses: ['["amenity"="public_bath"]["name"]','["leisure"="spa"]["name"]','["natural"="hot_spring"]["name"]'],
+  },
+  scenery: {
+    label: '景色・公園', fallback: '景色・公園',
+    clauses: ['["tourism"="viewpoint"]["name"]','["natural"="peak"]["name"]','["leisure"="park"]["name"]','["leisure"="garden"]["name"]'],
+  },
+  station: {
+    label: '駅', fallback: '駅',
+    clauses: ['["railway"="station"]["name"]','["railway"="halt"]["name"]'],
+  },
+  bicycle: {
+    label: '自転車店', fallback: '自転車店',
+    clauses: ['["shop"="bicycle"]["name"]','["amenity"="bicycle_repair_station"]["name"]'],
+  },
+};
+
+function addressFromTags(tags: Record<string,string>, fallback='') {
+  if (tags['addr:full']) return tags['addr:full'];
+  const parts = [tags['addr:province'] || tags['addr:state'], tags['addr:city'], tags['addr:town'], tags['addr:suburb'], tags['addr:quarter'], tags['addr:neighbourhood'], tags['addr:street'], tags['addr:housenumber']].filter(Boolean);
+  return parts.join(' ') || fallback;
+}
+function elementPoint(el:any){
+  const lat=finite(el?.lat ?? el?.center?.lat), lng=finite(el?.lon ?? el?.center?.lon);
+  return lat===null||lng===null?null:{lat,lng};
+}
+function placeName(tags:Record<string,string>, fallback:string){return String(tags['name:ja']||tags.name||tags.brand||fallback)}
+async function fetchOverpass(query:string){
+  const endpoints=['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter'];
+  let lastError='';
+  for(const endpoint of endpoints){
+    try{
+      const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','Accept':'application/json','User-Agent':'YOSHI-RIDE/1.1 personal cycling app'},body:'data='+encodeURIComponent(query)});
+      if(!res.ok){lastError=`HTTP ${res.status}`;continue;}
+      return await res.json();
+    }catch(e){lastError=e instanceof Error?e.message:String(e)}
+  }
+  throw new Error(`周辺スポット検索に接続できませんでした: ${lastError||'Overpass API error'}`);
+}
+async function searchPlaces(origin:{lat:number,lng:number},category:string,radiusM:number){
+  const def=PLACE_CATEGORIES[category];if(!def)throw new Error('未対応のジャンルです。');
+  const radius=Math.min(20000,Math.max(1000,Math.round(radiusM||5000)));
+  const around=`(around:${radius},${origin.lat.toFixed(6)},${origin.lng.toFixed(6)})`;
+  const statements=def.clauses.map(cl=>`nwr${around}${cl};`).join('');
+  const query=`[out:json][timeout:20];(${statements});out center tags 100;`;
+  const data=await fetchOverpass(query);const elements=Array.isArray(data?.elements)?data.elements:[];const seen=new Set<string>();const places:any[]=[];
+  for(const el of elements){const point=elementPoint(el);if(!point)continue;const tags=(el?.tags||{}) as Record<string,string>;const name=placeName(tags,def.fallback);const key=`${name}|${point.lat.toFixed(5)}|${point.lng.toFixed(5)}`;if(seen.has(key))continue;seen.add(key);const distanceM=haversine(origin,point);if(distanceM>radius*1.05)continue;places.push({id:`${el.type||'osm'}-${el.id||key}`,name,lat:point.lat,lng:point.lng,distanceM:Math.round(distanceM),address:addressFromTags(tags,def.label),osmType:el.type||null,osmId:el.id||null});}
+  places.sort((a,b)=>a.distanceM-b.distanceM);return {category,categoryLabel:def.label,radiusM:radius,places:places.slice(0,40)};
+}
+
 function selectCandidate(features:any[],mode:string){
   const candidates=features.map((f,i)=>({feature:f,index:i,m:metrics(f)}));if(!candidates.length)throw new Error('ルート候補を取得できませんでした。');
   let best=candidates[0], reason='おすすめ';
@@ -56,8 +121,9 @@ function selectCandidate(features:any[],mode:string){
 Deno.serve(async (req:Request)=>{
   if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors(req)});if(req.method!=='POST')return json(req,{error:'POSTのみ利用できます。'},405);
   try{
-    if(!ORS_API_KEY)throw new Error('Supabase Secret「ORS_API_KEY」が未設定です。');
     const body=await req.json();const originLat=finite(body?.origin?.lat),originLng=finite(body?.origin?.lng);if(originLat===null||originLng===null)throw new Error('現在地が取得できません。');
+    if(body?.action==='places'){const result=await searchPlaces({lat:originLat,lng:originLng},String(body?.category||''),Number(body?.radiusM||5000));return json(req,result);}
+    if(!ORS_API_KEY)throw new Error('Supabase Secret「ORS_API_KEY」が未設定です。');
     let destination:any;const dl=finite(body?.destination?.lat),dg=finite(body?.destination?.lng);if(dl!==null&&dg!==null)destination={lat:dl,lng:dg,label:String(body?.destination?.label||'地図で指定')};else{const text=String(body?.destination?.text||'').trim();if(!text)throw new Error('目的地を入力してください。');destination=await geocode(text)}
     const mode=['balanced','cycleway','hill'].includes(body?.mode)?body.mode:'balanced';const hillLevel=Math.min(3,Math.max(1,Math.round(Number(body?.hillLevel||2))));const beeline=haversine({lat:originLat,lng:originLng},destination);const useAlternatives=mode!=='balanced'&&beeline<65000;
     const requestBody:any={coordinates:[[originLng,originLat],[destination.lng,destination.lat]],elevation:true,instructions:false,preference:'recommended',extra_info:['steepness','waytype','surface','suitability'],options:{avoid_features:['steps','ferries','fords']}};

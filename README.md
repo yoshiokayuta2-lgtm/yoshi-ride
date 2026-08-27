@@ -1,8 +1,12 @@
-# YOSHI RIDE v1.0
+# YOSHI RIDE v1.1
 
 個人用ロードバイクPWA。20周年アプリ / KENJI MODEとは完全に別のGitHub Pagesアプリとして動きます。
 
 ## 入っている機能
+- 最初の画面に現在地中心のCyclOSM地図を常時表示
+- 地図タップで目的地を指定
+- ジャンル別の周辺スポット検索（カフェ・パン / グルメ / コンビニ / 温泉 / 景色・公園 / 駅 / 自転車店）
+- 検索範囲 3 / 5 / 10 / 20 km
 - 現在地 → 目的地のロードバイクルート
 - 距離 / 目安時間 / 獲得標高 / 最大斜度
 - 標高グラフ、上り区間一覧、地図上の斜度色分け
@@ -28,8 +32,11 @@ OpenRouteServiceの `cycling-road` を利用します。
 
 ※ OSM側の道路タグが未整備の場所では「サイクリングロード優先」の精度が下がります。
 
+## 周辺スポット検索
+OpenStreetMapのPOIデータをOverpass APIで検索します。検索はSupabase Edge Function `cycle-route` を経由し、ブラウザからOverpass APIへ直接アクセスしません。個人利用向けの軽量検索として、最大40件を距離順に表示します。
+
 ## 走行記録の保存
-v1.0ではブラウザの IndexedDB に保存します。個人用として、サーバーへGPS軌跡を送らない設計です。
+v1.1ではブラウザの IndexedDB に保存します。個人用として、サーバーへGPS軌跡を送らない設計です。
 
 - 同じ端末・同じブラウザ/PWAなら残ります。
 - 機種変更に備え、LOG画面の「記録をバックアップ」を使用してください。
@@ -45,7 +52,7 @@ Function name:
 ZIP内:
 `supabase/functions/cycle-route/index.ts`
 
-をEditorに貼ってDeployしてください。
+をEditorに貼ってDeployしてください。v1.0から更新する場合も、同じ `cycle-route` のコードをv1.1版に差し替えて再Deployします。
 
 `Settings > Verify JWT with legacy secret` は **OFF**。
 

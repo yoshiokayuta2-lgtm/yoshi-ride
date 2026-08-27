@@ -13,7 +13,7 @@
   <link rel="icon" href="assets/icon-192.png">
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="styles.css?v=100">
+  <link rel="stylesheet" href="styles.css?v=110">
 </head>
 <body>
   <div id="app">
@@ -66,7 +66,48 @@
             </label>
             <button id="mapPickBtn" class="ghost-btn map-pick" type="button">地図で指定</button>
           </div>
-          <div id="destinationHint" class="hint">地図をタップして目的地を指定することもできます。</div>
+          <div id="destinationHint" class="hint">下の地図をタップして目的地を指定することもできます。</div>
+
+          <div class="place-search-block">
+            <div class="place-search-head">
+              <div>
+                <span class="field-label">ジャンルから探す</span>
+                <small>現在地の周辺スポットを検索</small>
+              </div>
+              <label class="radius-field">
+                <span>検索範囲</span>
+                <select id="placeRadius" aria-label="周辺スポットの検索範囲">
+                  <option value="3000">3 km</option>
+                  <option value="5000" selected>5 km</option>
+                  <option value="10000">10 km</option>
+                  <option value="20000">20 km</option>
+                </select>
+              </label>
+            </div>
+            <div id="placeCategories" class="category-grid" aria-label="目的地ジャンル">
+              <button type="button" class="category-chip" data-category="cafe"><strong>カフェ・パン</strong><small>CAFE</small></button>
+              <button type="button" class="category-chip" data-category="food"><strong>グルメ</strong><small>FOOD</small></button>
+              <button type="button" class="category-chip" data-category="convenience"><strong>コンビニ</strong><small>CONVENIENCE</small></button>
+              <button type="button" class="category-chip" data-category="onsen"><strong>温泉</strong><small>ONSEN</small></button>
+              <button type="button" class="category-chip" data-category="scenery"><strong>景色・公園</strong><small>SCENERY</small></button>
+              <button type="button" class="category-chip" data-category="station"><strong>駅</strong><small>STATION</small></button>
+              <button type="button" class="category-chip" data-category="bicycle"><strong>自転車店</strong><small>BIKE SHOP</small></button>
+            </div>
+            <div id="placeMessage" class="place-message" aria-live="polite"></div>
+            <div id="placeResults" class="place-results" hidden></div>
+          </div>
+
+          <div class="planner-map-block">
+            <div class="section-head compact map-head">
+              <div><span class="section-kicker">DESTINATION MAP</span><h3 id="routeTitle">地図から選ぶ</h3></div>
+              <button id="fitRouteBtn" class="ghost-btn small" type="button">現在地</button>
+            </div>
+            <div id="routeMap" class="map planner-map"></div>
+            <div class="map-helper">「地図で指定」を押したあと、行きたい場所を地図上でタップしてください。ルート作成後は斜度別に色分けします。</div>
+            <div class="grade-legend" aria-label="斜度の色分け">
+              <span><i class="g0"></i>平坦</span><span><i class="g1"></i>1–4%</span><span><i class="g2"></i>4–7%</span><span><i class="g3"></i>7–10%</span><span><i class="g4"></i>10%+</span>
+            </div>
+          </div>
 
           <div class="mode-block">
             <span class="field-label">ルートモード</span>
@@ -105,19 +146,6 @@
             <div class="meta-chip"><span>サイクリングロード</span><strong id="cyclewayPct">--%</strong></div>
             <div class="meta-chip"><span>舗装路</span><strong id="pavedPct">--%</strong></div>
             <div class="meta-chip"><span>選択理由</span><strong id="routeReason">--</strong></div>
-          </div>
-
-          <div class="panel map-panel">
-            <div class="section-head compact">
-              <div><span class="section-kicker">ROUTE MAP</span><h3 id="routeTitle">ルート</h3></div>
-              <div class="map-actions">
-                <button id="fitRouteBtn" class="ghost-btn small" type="button">全体表示</button>
-              </div>
-            </div>
-            <div id="routeMap" class="map"></div>
-            <div class="grade-legend" aria-label="斜度の色分け">
-              <span><i class="g0"></i>平坦</span><span><i class="g1"></i>1–4%</span><span><i class="g2"></i>4–7%</span><span><i class="g3"></i>7–10%</span><span><i class="g4"></i>10%+</span>
-            </div>
           </div>
 
           <div class="panel chart-panel">
@@ -208,6 +236,6 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="app.js?v=100"></script>
+  <script src="app.js?v=110"></script>
 </body>
 </html>
