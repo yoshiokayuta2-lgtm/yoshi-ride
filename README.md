@@ -96,3 +96,9 @@ WebアプリのGPSは、OSがブラウザ/PWAをバックグラウンド停止�
 
 ### v1.3 更新時
 GitHub Pages側の全ファイルを上書きし、Supabase Edge Function `cycle-route` の `index.ts` も v1.3 に再Deployしてください。`ORS_API_KEY` は既存Secretをそのまま使い、Verify JWTはOFFのままです。
+
+
+## v1.4
+- YOSHI + FELT F85の挿絵をアプリUIへ追加。
+- RIDE地図のワールド表示を修正。表示後にLeafletを再計算し、ルートまたは現在地へ確実にフィットします。
+- 今回はフロント側のみの更新で、Supabase再デプロイは不要です。

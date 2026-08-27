@@ -13,7 +13,7 @@
   <link rel="icon" href="assets/icon-192.png">
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="styles.css?v=130">
+  <link rel="stylesheet" href="styles.css?v=140">
 </head>
 <body>
   <div id="app">
@@ -42,11 +42,8 @@
             <h2>今日は、どんな道を走る？</h2>
             <p>目的地と走り方を選ぶと、距離・時間・獲得標高・斜度の変化までまとめて表示します。</p>
           </div>
-          <div class="hero-bike" aria-hidden="true">
-            <svg viewBox="0 0 180 92" role="img">
-              <circle cx="42" cy="64" r="25"></circle><circle cx="139" cy="64" r="25"></circle>
-              <path d="M42 64 73 24h36l30 40M73 24l23 40H42l31-40m23 40 14-28m-2 0h25M71 22l-9-8m6 2h19"></path>
-            </svg>
+          <div class="hero-character" aria-hidden="true">
+            <img src="assets/yoshi-felt.png" alt="">
           </div>
         </div>
 
@@ -215,7 +212,10 @@
               <span class="section-kicker light">LIVE RIDE</span>
               <h2 id="rideStateTitle">READY</h2>
             </div>
-            <span id="wakeBadge" class="wake-badge">画面常時ON --</span>
+            <div class="ride-live-tools">
+              <img class="ride-mascot" src="assets/yoshi-felt.png" alt="" aria-hidden="true">
+              <span id="wakeBadge" class="wake-badge">画面常時ON --</span>
+            </div>
           </div>
 
           <div class="ride-nav-card">
@@ -269,6 +269,7 @@
         </div>
         <div id="ridesList" class="rides-list"></div>
         <div id="emptyLog" class="empty-state">
+          <img class="empty-mascot" src="assets/yoshi-felt.png" alt="" aria-hidden="true">
           <strong>まだ走行記録がありません。</strong>
           <span>RIDEタブでSTARTすると、走った道を端末に保存します。</span>
         </div>
@@ -291,6 +292,6 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="app.js?v=130"></script>
+  <script src="app.js?v=140"></script>
 </body>
 </html>
