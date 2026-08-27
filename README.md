@@ -1,4 +1,4 @@
-# YOSHI RIDE v1.1
+# YOSHI RIDE v1.2
 
 個人用ロードバイクPWA。20周年アプリ / KENJI MODEとは完全に別のGitHub Pagesアプリとして動きます。
 
@@ -73,3 +73,13 @@ Safari / Chromeで開き、ホーム画面に追加するとPWAとして使え�
 WebアプリのGPSは、OSがブラウザ/PWAをバックグラウンド停止すると記録が止まることがあります。走行中は「画面常時ON」を利用し、アプリを前面で開いた状態を推奨します。
 
 安全上、表示ルートより現地の標識・通行規制・道路状況を優先してください。
+
+
+## v1.2 周辺検索の改善
+- Overpass APIを3系統でフォールバック。
+- 0件時は around（円検索）からbbox（矩形検索）へ自動再検索。
+- 駅は railway=station/halt に加え public_transport=station / building=train_station も検索。
+- name必須条件を廃止し、brand/operator/refからも名称を補完。
+- 検索上限を60件、最大半径を30kmへ拡張。
+
+- v1.2 final: 現在地から2km以内はOpenRouteService POI APIを優先し、広域はOverpassで補完する二重検索に変更。

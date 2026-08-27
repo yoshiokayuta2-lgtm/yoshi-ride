@@ -1,4 +1,4 @@
-YOSHI RIDE v1.1 更新手順
+YOSHI RIDE v1.2 更新手順
 
 【GitHub】
 1) yoshi-ride リポジトリに、このZIPの中身を上書きアップロード
@@ -7,12 +7,12 @@ YOSHI RIDE v1.1 更新手順
 
 【Supabase】
 4) Edge Functions > cycle-route > Code
-5) supabase/functions/cycle-route/index.ts の中身をv1.1版へ差し替え
+5) supabase/functions/cycle-route/index.ts の中身をv1.2版へ差し替え
 6) Deploy function
 7) Settings > Verify JWT with legacy secret = OFF のまま確認
 
 ※ ORS_API_KEY は既存のものをそのまま利用できます。
-※ v1.1では周辺ジャンル検索も cycle-route 内で処理するため、新しいFunctionやSecretは不要です。
+※ v1.2では周辺ジャンル検索も cycle-route 内で処理するため、新しいFunctionやSecretは不要です。
 
 確認ポイント
 - ROUTE画面を開いた時点で地図が表示される

@@ -43,68 +43,167 @@ function metrics(feature:any){
   return {distanceM:Number(summary.distance||0),durationS:Number(summary.duration||0),ascentM:Number(summary.ascent||0),descentM:Number(summary.descent||0),cyclewayPct,pavedPct,stateRoadPct,suitabilityPct,...profile};
 }
 
-const PLACE_CATEGORIES: Record<string, { label: string; clauses: string[]; fallback: string }> = {
+const PLACE_CATEGORIES: Record<string, { label: string; clauses: string[]; orsIds: number[]; fallback: string }> = {
   cafe: {
-    label: 'カフェ・パン', fallback: 'カフェ・パン',
-    clauses: ['["amenity"="cafe"]["name"]','["shop"="bakery"]["name"]','["shop"="confectionery"]["name"]','["shop"="coffee"]["name"]'],
+    label: 'カフェ・パン', fallback: 'カフェ・パン', orsIds:[564,426,435,448,450],
+    clauses: ['["amenity"="cafe"]','["shop"="bakery"]','["shop"="confectionery"]','["shop"="coffee"]'],
   },
   food: {
-    label: 'グルメ', fallback: '飲食店',
-    clauses: ['["amenity"="restaurant"]["name"]','["amenity"="fast_food"]["name"]','["amenity"="food_court"]["name"]'],
+    label: 'グルメ', fallback: '飲食店', orsIds:[570,566,567,568],
+    clauses: ['["amenity"="restaurant"]','["amenity"="fast_food"]','["amenity"="food_court"]','["amenity"="ice_cream"]'],
   },
   convenience: {
-    label: 'コンビニ', fallback: 'コンビニ',
-    clauses: ['["shop"="convenience"]["name"]'],
+    label: 'コンビニ', fallback: 'コンビニ', orsIds:[451],
+    clauses: ['["shop"="convenience"]'],
   },
   onsen: {
-    label: '温泉', fallback: '温浴施設',
-    clauses: ['["amenity"="public_bath"]["name"]','["leisure"="spa"]["name"]','["natural"="hot_spring"]["name"]'],
+    label: '温泉', fallback: '温浴施設', orsIds:[285,286,306],
+    clauses: ['["amenity"="public_bath"]','["leisure"="spa"]','["natural"="hot_spring"]','["amenity"="sauna"]'],
   },
   scenery: {
-    label: '景色・公園', fallback: '景色・公園',
-    clauses: ['["tourism"="viewpoint"]["name"]','["natural"="peak"]["name"]','["leisure"="park"]["name"]','["leisure"="garden"]["name"]'],
+    label: '景色・公園', fallback: '景色・公園', orsIds:[627,280,272,279,335,622],
+    clauses: ['["tourism"="viewpoint"]','["tourism"="attraction"]','["natural"="peak"]','["natural"="waterfall"]','["leisure"="park"]','["leisure"="garden"]'],
   },
   station: {
-    label: '駅', fallback: '駅',
-    clauses: ['["railway"="station"]["name"]','["railway"="halt"]["name"]'],
+    label: '駅', fallback: '駅', orsIds:[604,597,610],
+    clauses: ['["railway"="station"]','["railway"="halt"]','["public_transport"="station"]','["building"="train_station"]'],
   },
   bicycle: {
-    label: '自転車店', fallback: '自転車店',
-    clauses: ['["shop"="bicycle"]["name"]','["amenity"="bicycle_repair_station"]["name"]'],
+    label: '自転車店', fallback: '自転車関連', orsIds:[429,585,584],
+    clauses: ['["shop"="bicycle"]','["amenity"="bicycle_repair_station"]','["amenity"="bicycle_rental"]'],
   },
 };
 
 function addressFromTags(tags: Record<string,string>, fallback='') {
   if (tags['addr:full']) return tags['addr:full'];
   const parts = [tags['addr:province'] || tags['addr:state'], tags['addr:city'], tags['addr:town'], tags['addr:suburb'], tags['addr:quarter'], tags['addr:neighbourhood'], tags['addr:street'], tags['addr:housenumber']].filter(Boolean);
-  return parts.join(' ') || fallback;
+  return parts.join(' ') || tags.operator || tags.brand || fallback;
 }
 function elementPoint(el:any){
   const lat=finite(el?.lat ?? el?.center?.lat), lng=finite(el?.lon ?? el?.center?.lon);
   return lat===null||lng===null?null:{lat,lng};
 }
-function placeName(tags:Record<string,string>, fallback:string){return String(tags['name:ja']||tags.name||tags.brand||fallback)}
-async function fetchOverpass(query:string){
-  const endpoints=['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter'];
-  let lastError='';
+function placeName(tags:Record<string,string>, fallback:string){
+  return String(tags['name:ja']||tags.name||tags.brand||tags.operator||tags.ref||fallback);
+}
+function overpassStatements(clauses:string[], spatial:string){
+  return clauses.map(cl=>`nwr${cl}${spatial};`).join('');
+}
+function orsPoiName(tags:Record<string,string>, fallback:string){
+  return String(tags['name:ja']||tags.name||tags.brand||tags.operator||tags.ref||fallback);
+}
+async function searchOrsPois(origin:{lat:number,lng:number}, def:{label:string;fallback:string;orsIds:number[]}, radiusM:number){
+  if(!ORS_API_KEY || !def.orsIds.length)return [];
+  const buffer=Math.min(2000,Math.max(250,Math.round(radiusM)));
+  const body={
+    request:'pois',
+    geometry:{geojson:{type:'Point',coordinates:[origin.lng,origin.lat]},buffer},
+    limit:200,
+    sortby:'distance',
+    filters:{category_ids:def.orsIds},
+  };
+  try{
+    const res=await fetch('https://api.openrouteservice.org/pois',{method:'POST',headers:{Authorization:ORS_API_KEY,'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)return [];
+    const features=Array.isArray(data?.features)?data.features:[];
+    const out:any[]=[];
+    for(const f of features){
+      const c=f?.geometry?.coordinates;if(!Array.isArray(c)||c.length<2)continue;
+      const lng=finite(c[0]),lat=finite(c[1]);if(lat===null||lng===null)continue;
+      const tags=(f?.properties?.osm_tags||{}) as Record<string,string>;
+      const name=orsPoiName(tags,def.fallback);
+      const distanceM=finite(f?.properties?.distance)??haversine(origin,{lat,lng});
+      out.push({id:`ors-${f?.properties?.osm_type||'x'}-${f?.properties?.osm_id||`${lat}-${lng}`}`,name,lat,lng,distanceM:Math.round(distanceM),address:addressFromTags(tags,def.label),osmType:f?.properties?.osm_type||null,osmId:f?.properties?.osm_id||null,source:'ors-poi'});
+    }
+    return out;
+  }catch{return []}
+}
+function mergePlaces(...groups:any[][]){
+  const seenOsm=new Set<string>(), seenPos=new Set<string>(), out:any[]=[];
+  for(const group of groups)for(const p of group){
+    const osm=p.osmId?String(p.osmId):'';const pos=`${String(p.name||'').toLowerCase()}|${Number(p.lat).toFixed(5)}|${Number(p.lng).toFixed(5)}`;
+    if((osm&&seenOsm.has(osm))||seenPos.has(pos))continue;
+    if(osm)seenOsm.add(osm);seenPos.add(pos);out.push(p);
+  }
+  out.sort((a,b)=>Number(a.distanceM||0)-Number(b.distanceM||0));return out;
+}
+function bboxFor(origin:{lat:number,lng:number}, radiusM:number){
+  const latDelta=radiusM/111320;
+  const cos=Math.max(.2,Math.cos(origin.lat*Math.PI/180));
+  const lngDelta=radiusM/(111320*cos);
+  return {
+    south:origin.lat-latDelta, west:origin.lng-lngDelta,
+    north:origin.lat+latDelta, east:origin.lng+lngDelta,
+  };
+}
+async function fetchOverpass(query:string, requireElements=false){
+  const endpoints=[
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
+  ];
+  let lastError=''; let lastEmpty:any=null;
   for(const endpoint of endpoints){
     try{
-      const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','Accept':'application/json','User-Agent':'YOSHI-RIDE/1.1 personal cycling app'},body:'data='+encodeURIComponent(query)});
-      if(!res.ok){lastError=`HTTP ${res.status}`;continue;}
-      return await res.json();
-    }catch(e){lastError=e instanceof Error?e.message:String(e)}
+      const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','Accept':'application/json','User-Agent':'YOSHI-RIDE/1.2 personal cycling app'},body:'data='+encodeURIComponent(query)});
+      if(!res.ok){lastError=`${endpoint}: HTTP ${res.status}`;continue;}
+      const data=await res.json().catch(()=>null);
+      if(!data){lastError=`${endpoint}: JSON parse error`;continue;}
+      const remark=String(data?.remark||'').trim();
+      if(remark){lastError=`${endpoint}: ${remark}`;continue;}
+      const elements=Array.isArray(data?.elements)?data.elements:[];
+      if(requireElements && elements.length===0){lastEmpty={...data,_endpoint:endpoint};continue;}
+      return {...data,_endpoint:endpoint};
+    }catch(e){lastError=`${endpoint}: ${e instanceof Error?e.message:String(e)}`}
   }
+  if(lastEmpty)return lastEmpty;
   throw new Error(`周辺スポット検索に接続できませんでした: ${lastError||'Overpass API error'}`);
+}
+function normalizePlaces(data:any, origin:{lat:number,lng:number}, radius:number, def:{label:string;fallback:string}){
+  const elements=Array.isArray(data?.elements)?data.elements:[];const seen=new Set<string>();const places:any[]=[];
+  for(const el of elements){
+    const point=elementPoint(el);if(!point)continue;
+    const tags=(el?.tags||{}) as Record<string,string>;
+    const name=placeName(tags,def.fallback);
+    const key=`${name}|${point.lat.toFixed(5)}|${point.lng.toFixed(5)}`;
+    if(seen.has(key))continue;seen.add(key);
+    const distanceM=haversine(origin,point);if(distanceM>radius*1.08)continue;
+    places.push({id:`${el.type||'osm'}-${el.id||key}`,name,lat:point.lat,lng:point.lng,distanceM:Math.round(distanceM),address:addressFromTags(tags,def.label),osmType:el.type||null,osmId:el.id||null});
+  }
+  places.sort((a,b)=>a.distanceM-b.distanceM);return places;
 }
 async function searchPlaces(origin:{lat:number,lng:number},category:string,radiusM:number){
   const def=PLACE_CATEGORIES[category];if(!def)throw new Error('未対応のジャンルです。');
-  const radius=Math.min(20000,Math.max(1000,Math.round(radiusM||5000)));
-  const around=`(around:${radius},${origin.lat.toFixed(6)},${origin.lng.toFixed(6)})`;
-  const statements=def.clauses.map(cl=>`nwr${around}${cl};`).join('');
-  const query=`[out:json][timeout:20];(${statements});out center tags 100;`;
-  const data=await fetchOverpass(query);const elements=Array.isArray(data?.elements)?data.elements:[];const seen=new Set<string>();const places:any[]=[];
-  for(const el of elements){const point=elementPoint(el);if(!point)continue;const tags=(el?.tags||{}) as Record<string,string>;const name=placeName(tags,def.fallback);const key=`${name}|${point.lat.toFixed(5)}|${point.lng.toFixed(5)}`;if(seen.has(key))continue;seen.add(key);const distanceM=haversine(origin,point);if(distanceM>radius*1.05)continue;places.push({id:`${el.type||'osm'}-${el.id||key}`,name,lat:point.lat,lng:point.lng,distanceM:Math.round(distanceM),address:addressFromTags(tags,def.label),osmType:el.type||null,osmId:el.id||null});}
-  places.sort((a,b)=>a.distanceM-b.distanceM);return {category,categoryLabel:def.label,radiusM:radius,places:places.slice(0,40)};
+  const radius=Math.min(30000,Math.max(1000,Math.round(radiusM||5000)));
+
+  // ORS POI: 公開APIの制限に合わせ、まず現在地2km以内を高信頼で取得。
+  const orsPlaces=await searchOrsPois(origin,def,Math.min(radius,2000));
+
+  // Overpass: 選択した検索半径全体をカバー。失敗してもORSの近距離結果は残す。
+  let osmPlaces:any[]=[]; let strategy='around'; let endpoint=''; let wideSearchOk=false;
+  try{
+    const around=`(around:${radius},${origin.lat.toFixed(6)},${origin.lng.toFixed(6)})`;
+    const aroundQuery=`[out:json][timeout:18];(${overpassStatements(def.clauses,around)});out tags center qt 250;`;
+    const aroundData=await fetchOverpass(aroundQuery,true);
+    osmPlaces=normalizePlaces(aroundData,origin,radius,def);
+    endpoint=String(aroundData?._endpoint||''); wideSearchOk=true;
+
+    if(!osmPlaces.length){
+      const b=bboxFor(origin,radius);
+      const bbox=`(${b.south.toFixed(6)},${b.west.toFixed(6)},${b.north.toFixed(6)},${b.east.toFixed(6)})`;
+      const bboxQuery=`[out:json][timeout:18];(${overpassStatements(def.clauses,bbox)});out tags center qt 300;`;
+      const bboxData=await fetchOverpass(bboxQuery,true);
+      osmPlaces=normalizePlaces(bboxData,origin,radius,def);
+      strategy='bbox';endpoint=String(bboxData?._endpoint||endpoint);wideSearchOk=true;
+    }
+  }catch(e){
+    console.warn('Overpass fallback failed',e);
+  }
+
+  const places=mergePlaces(orsPlaces,osmPlaces).filter(p=>Number(p.distanceM||0)<=radius*1.08).slice(0,60);
+  if(!places.length && !wideSearchOk && !orsPlaces.length)throw new Error('周辺スポット検索に接続できませんでした。少し時間をおいて再試行してください。');
+  return {category,categoryLabel:def.label,radiusM:radius,places,searchMeta:{strategy,endpoint,orsCount:orsPlaces.length,osmCount:osmPlaces.length,wideSearchOk}};
 }
 
 function selectCandidate(features:any[],mode:string){
