@@ -19,6 +19,9 @@ function cors(req: Request) {
 function json(req: Request, body: unknown, status=200) { return new Response(JSON.stringify(body), { status, headers: cors(req) }); }
 function finite(v: unknown) { const n=Number(v); return Number.isFinite(n)?n:null; }
 function haversine(a:{lat:number,lng:number},b:{lat:number,lng:number}){const R=6371000,p1=a.lat*Math.PI/180,p2=b.lat*Math.PI/180,dp=(b.lat-a.lat)*Math.PI/180,dl=(b.lng-a.lng)*Math.PI/180;const x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
+function pointAt(origin:{lat:number,lng:number}, bearingDeg:number, distanceM:number){const R=6371000,br=bearingDeg*Math.PI/180,d=distanceM/R,lat1=origin.lat*Math.PI/180,lon1=origin.lng*Math.PI/180;const lat2=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(br));const lon2=lon1+Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(lat1),Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));return {lat:lat2*180/Math.PI,lng:((lon2*180/Math.PI+540)%360)-180};}
+function directionName(b:number){const names=['北','北東','東','南東','南','南西','西','北西'];return names[Math.round((((b%360)+360)%360)/45)%8];}
+async function reverseLabel(point:{lat:number,lng:number},fallback:string){try{const url=new URL('https://api.openrouteservice.org/geocode/reverse');url.searchParams.set('point.lon',String(point.lng));url.searchParams.set('point.lat',String(point.lat));url.searchParams.set('size','1');const res=await fetch(url,{headers:{Authorization:ORS_API_KEY}});const data=await res.json().catch(()=>({}));const p=data?.features?.[0]?.properties||{};return String(p.name||p.locality||p.county||p.region||p.label||fallback);}catch{return fallback}}
 
 async function geocode(text:string){
   const url=new URL('https://api.openrouteservice.org/geocode/search');url.searchParams.set('text',text);url.searchParams.set('size','1');url.searchParams.set('boundary.country','JP');
@@ -146,7 +149,7 @@ async function fetchOverpass(query:string, requireElements=false){
   let lastError=''; let lastEmpty:any=null;
   for(const endpoint of endpoints){
     try{
-      const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','Accept':'application/json','User-Agent':'YOSHI-RIDE/1.2 personal cycling app'},body:'data='+encodeURIComponent(query)});
+      const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8','Accept':'application/json','User-Agent':'YOSHI-RIDE/1.3 personal cycling app'},body:'data='+encodeURIComponent(query)});
       if(!res.ok){lastError=`${endpoint}: HTTP ${res.status}`;continue;}
       const data=await res.json().catch(()=>null);
       if(!data){lastError=`${endpoint}: JSON parse error`;continue;}
@@ -206,6 +209,43 @@ async function searchPlaces(origin:{lat:number,lng:number},category:string,radiu
   return {category,categoryLabel:def.label,radiusM:radius,places,searchMeta:{strategy,endpoint,orsCount:orsPlaces.length,osmCount:osmPlaces.length,wideSearchOk}};
 }
 
+async function recommendationRoute(origin:{lat:number,lng:number}, destination:{lat:number,lng:number}, purpose:string){
+  const requestBody:any={coordinates:[[origin.lng,origin.lat],[destination.lng,destination.lat]],elevation:true,instructions:false,preference:'recommended',extra_info:['steepness','waytype','surface','suitability'],options:{avoid_features:['steps','ferries','fords']}};
+  if(purpose==='training')requestBody.options.profile_params={weightings:{steepness_difficulty:3}};
+  const res=await fetch('https://api.openrouteservice.org/v2/directions/cycling-road/geojson',{method:'POST',headers:{Authorization:ORS_API_KEY,'Content-Type':'application/json'},body:JSON.stringify(requestBody)});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error(data?.error?.message||`HTTP ${res.status}`);
+  const f=data?.features?.[0];if(!f)throw new Error('ルート候補なし');return metrics(f);
+}
+async function recommendCourses(origin:{lat:number,lng:number}, minutesValue:number, purposeValue:string){
+  const minutes=Math.min(180,Math.max(20,Math.round(minutesValue||60)));
+  const purpose=purposeValue==='training'?'training':'leisure';
+  const targetS=minutes*60;
+  const speedKmh=purpose==='training'?17:22;
+  const detourFactor=purpose==='training'?.62:.70;
+  const radialM=Math.max(4000,speedKmh*1000*(minutes/60)*detourFactor);
+  const bearings=[10,70,130,190,250,310];
+  const attempts=await Promise.allSettled(bearings.map(async bearing=>{
+    const destination=pointAt(origin,bearing,radialM);
+    const m=await recommendationRoute(origin,destination,purpose);
+    const timeFit=Math.abs(m.durationS-targetS)/targetS;
+    const km=Math.max(1,m.distanceM/1000);
+    const ascentPerKm=m.ascentM/km;
+    const climbGain=(m.climbs||[]).reduce((sum:number,c:any)=>sum+Number(c.gainM||0),0);
+    const score=purpose==='training'
+      ? timeFit*95-m.ascentM*.075-m.maxGrade*2.4-climbGain*.035
+      : timeFit*110-m.cyclewayPct*.55-m.pavedPct*.10+ascentPerKm*.11+m.maxGrade*.55;
+    return {bearing,destination,m,timeFit,score};
+  }));
+  let routes=attempts.filter((x:any)=>x.status==='fulfilled').map((x:any)=>x.value);
+  if(!routes.length)throw new Error('周辺におすすめコースを作れませんでした。時間を変えて再試行してください。');
+  const reasonable=routes.filter((x:any)=>x.m.durationS>=targetS*.48&&x.m.durationS<=targetS*1.75);if(reasonable.length>=2)routes=reasonable;
+  routes.sort((a:any,b:any)=>a.score-b.score);const picked=routes.slice(0,3);
+  const candidates=[];
+  for(let i=0;i<picked.length;i++){const x=picked[i];const dir=directionName(x.bearing);const area=await reverseLabel(x.destination,`${dir}方面`);const label=area.includes(dir)?area:`${area}・${dir}方面`;const m=x.m;const reason=purpose==='training'?`片道${minutes}分目安 / 獲得${Math.round(m.ascentM)}m・最大${m.maxGrade.toFixed(1)}%`:`片道${minutes}分目安 / cycleway ${Math.round(m.cyclewayPct)}%・舗装 ${Math.round(m.pavedPct)}%`;candidates.push({destination:{lat:x.destination.lat,lng:x.destination.lng,label},summary:{distanceM:Math.round(m.distanceM),durationS:Math.round(m.durationS),ascentM:Math.round(m.ascentM),descentM:Math.round(m.descentM),maxGrade:Number(m.maxGrade.toFixed(1)),cyclewayPct:Number(m.cyclewayPct.toFixed(1)),pavedPct:Number(m.pavedPct.toFixed(1))},route:downsample(m.route,900),elevationProfile:downsample(m.elevationProfile,320),climbs:(m.climbs||[]).slice(0,8),selection:{mode:purpose==='training'?'hill':'cycleway',purpose,minutes,reason,candidateCount:routes.length}});}
+  return {purpose,minutes,targetDurationS:targetS,candidates};
+}
+
 function selectCandidate(features:any[],mode:string){
   const candidates=features.map((f,i)=>({feature:f,index:i,m:metrics(f)}));if(!candidates.length)throw new Error('ルート候補を取得できませんでした。');
   let best=candidates[0], reason='おすすめ';
@@ -223,6 +263,7 @@ Deno.serve(async (req:Request)=>{
     const body=await req.json();const originLat=finite(body?.origin?.lat),originLng=finite(body?.origin?.lng);if(originLat===null||originLng===null)throw new Error('現在地が取得できません。');
     if(body?.action==='places'){const result=await searchPlaces({lat:originLat,lng:originLng},String(body?.category||''),Number(body?.radiusM||5000));return json(req,result);}
     if(!ORS_API_KEY)throw new Error('Supabase Secret「ORS_API_KEY」が未設定です。');
+    if(body?.action==='recommend'){const result=await recommendCourses({lat:originLat,lng:originLng},Number(body?.minutes||60),String(body?.purpose||'leisure'));return json(req,result);}
     let destination:any;const dl=finite(body?.destination?.lat),dg=finite(body?.destination?.lng);if(dl!==null&&dg!==null)destination={lat:dl,lng:dg,label:String(body?.destination?.label||'地図で指定')};else{const text=String(body?.destination?.text||'').trim();if(!text)throw new Error('目的地を入力してください。');destination=await geocode(text)}
     const mode=['balanced','cycleway','hill'].includes(body?.mode)?body.mode:'balanced';const hillLevel=Math.min(3,Math.max(1,Math.round(Number(body?.hillLevel||2))));const beeline=haversine({lat:originLat,lng:originLng},destination);const useAlternatives=mode!=='balanced'&&beeline<65000;
     const requestBody:any={coordinates:[[originLng,originLat],[destination.lng,destination.lat]],elevation:true,instructions:false,preference:'recommended',extra_info:['steepness','waytype','surface','suitability'],options:{avoid_features:['steps','ferries','fords']}};

@@ -18,3 +18,12 @@ YOSHI RIDE v1.2 更新手順
 - ROUTE画面を開いた時点で地図が表示される
 - 「地図で指定」→ 地図タップで目的地をセットできる
 - ジャンルを押すと現在地周辺の候補が距離順に出る
+
+
+[v1.3 update]
+1. GitHub yoshi-ride: ZIP内のファイルを上書き
+2. Supabase > Edge Functions > cycle-route > Code
+3. supabase/functions/cycle-route/index.ts を全置換してDeploy
+4. Settings > Verify JWT with legacy secret = OFF のまま
+5. ORS_API_KEYは変更不要
+6. GitHub Pagesを再読み込み。YOSHI RIDE v1.3.0をConsoleで確認可能

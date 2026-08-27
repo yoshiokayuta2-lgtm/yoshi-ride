@@ -13,7 +13,7 @@
   <link rel="icon" href="assets/icon-192.png">
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-  <link rel="stylesheet" href="styles.css?v=120">
+  <link rel="stylesheet" href="styles.css?v=130">
 </head>
 <body>
   <div id="app">
@@ -67,6 +67,47 @@
             <button id="mapPickBtn" class="ghost-btn map-pick" type="button">地図で指定</button>
           </div>
           <div id="destinationHint" class="hint">下の地図をタップして目的地を指定することもできます。</div>
+
+          <div class="home-shortcut">
+            <div class="home-copy">
+              <span class="field-label">MY HOME</span>
+              <strong>自宅</strong>
+              <small id="homeStatus">未登録 ・ 位置はこの端末だけに保存します</small>
+            </div>
+            <div class="home-actions">
+              <button id="homeUseBtn" class="home-primary" type="button" disabled>自宅へ</button>
+              <button id="homeCurrentBtn" class="ghost-btn small" type="button">現在地を登録</button>
+              <button id="homeMapBtn" class="ghost-btn small" type="button">地図で登録</button>
+              <button id="homeClearBtn" class="home-clear" type="button" hidden>解除</button>
+            </div>
+          </div>
+
+
+          <div class="recommend-block">
+            <div class="place-search-head">
+              <div>
+                <span class="field-label">時間からおすすめ</span>
+                <small>片道の予定時間から、走り方に合うコースを3本提案</small>
+              </div>
+              <label class="radius-field recommend-time">
+                <span>片道</span>
+                <select id="recommendMinutes" aria-label="片道の予定時間">
+                  <option value="30">30分</option>
+                  <option value="45">45分</option>
+                  <option value="60" selected>60分</option>
+                  <option value="90">90分</option>
+                  <option value="120">120分</option>
+                </select>
+              </label>
+            </div>
+            <div class="recommend-purpose" role="radiogroup" aria-label="おすすめコースの目的">
+              <button type="button" class="purpose-card active" data-purpose="leisure" role="radio" aria-checked="true"><strong>娯楽</strong><small>走りやすさ・サイクリングロード重視</small></button>
+              <button type="button" class="purpose-card" data-purpose="training" role="radio" aria-checked="false"><strong>トレーニング</strong><small>獲得標高・急坂・上り区間重視</small></button>
+            </div>
+            <button id="recommendBtn" class="recommend-btn" type="button">おすすめコースを作る</button>
+            <div id="recommendMessage" class="place-message" aria-live="polite"></div>
+            <div id="recommendResults" class="recommend-results" hidden></div>
+          </div>
 
           <div class="place-search-block">
             <div class="place-search-head">
@@ -176,15 +217,29 @@
             </div>
             <span id="wakeBadge" class="wake-badge">画面常時ON --</span>
           </div>
+
+          <div class="ride-nav-card">
+            <div class="ride-destination">
+              <span>DESTINATION</span>
+              <strong id="rideDestination">フリーライド</strong>
+              <small id="rideRouteState">ルート未設定</small>
+            </div>
+            <div><span>残り</span><strong id="rideRemaining">-- km</strong></div>
+            <div><span>到着予想</span><strong id="rideArrival">--:--</strong></div>
+          </div>
+
           <div class="speed-block">
             <strong id="liveSpeed">0.0</strong><span>km/h</span>
           </div>
           <div class="ride-stats">
             <div><span>距離</span><strong id="liveDistance">0.00 km</strong></div>
             <div><span>時間</span><strong id="liveDuration">00:00:00</strong></div>
+            <div><span>AVG</span><strong id="liveAvgSpeed">0.0 km/h</strong></div>
             <div><span>獲得標高*</span><strong id="liveAscent">0 m</strong></div>
             <div><span>MAX</span><strong id="liveMaxSpeed">0.0 km/h</strong></div>
+            <div><span>この先斜度</span><strong id="rideUpcomingGrade">-- %</strong></div>
           </div>
+          <div class="next-climb-card"><span>NEXT CLIMB</span><strong id="rideNextClimb">ルートを設定すると表示します</strong></div>
           <div class="ride-controls">
             <button id="startRideBtn" class="ride-start" type="button">START</button>
             <button id="pauseRideBtn" class="ride-secondary" type="button" disabled>PAUSE</button>
@@ -236,6 +291,6 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="app.js?v=120"></script>
+  <script src="app.js?v=130"></script>
 </body>
 </html>
