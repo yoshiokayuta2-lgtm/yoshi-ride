@@ -3,7 +3,7 @@
 
 const CONFIG = {
   functionUrl: 'https://sxugznyvbojkfshevpcs.supabase.co/functions/v1/cycle-route',
-  build: '1.4.0',
+  build: '1.5.0',
 };
 
 const $ = (id) => document.getElementById(id);
@@ -19,7 +19,7 @@ const els = {
 const state = {
   mode:'balanced', hillLevel:2, currentPosition:null, destinationPoint:null, mapPick:false, homePick:false, homePoint:null, routeData:null, plannedRoute:null, planProgress:null, recommendPurpose:'leisure', recommendations:[], selectedCategory:null, placeResults:[],
   installPrompt:null, routeMap:null, rideMap:null, historyMap:null, routeLayers:[], placeMarkers:null, rideTrackLayer:null, ridePlannedLayer:null, rideCurrentMarker:null, rideDestinationMarker:null, historyLayer:null,
-  ride:{status:'ready',watchId:null,startTs:0,pauseStarted:0,pausedMs:0,points:[],distanceM:0,ascentM:0,maxSpeedKmh:0,lastAccepted:null,timer:null,wakeLock:null},
+  ride:{status:'ready',watchId:null,startTs:0,pauseStarted:0,pausedMs:0,points:[],distanceM:0,ascentM:0,maxSpeedKmh:0,lastAccepted:null,timer:null,wakeLock:null,followPauseUntil:0,followTimer:null},
   modalRide:null,
 };
 
@@ -55,6 +55,7 @@ function initMaps(){
   state.routeMap=L.map('routeMap',{zoomControl:true}).setView([35.423,136.76],10); base(state.routeMap,true);
   state.placeMarkers=L.layerGroup().addTo(state.routeMap);
   state.rideMap=L.map('rideMap',{zoomControl:true}).setView([35.423,136.76],11); base(state.rideMap);
+  state.rideMap.on('dragstart',()=>{if(state.ride.status==='recording')pauseRideMapFollow();});
   state.historyMap=L.map('historyMap',{zoomControl:true}).setView([35.423,136.76],11); base(state.historyMap);
   state.routeMap.on('click',e=>{
     if(state.homePick){saveHome({lat:e.latlng.lat,lng:e.latlng.lng});state.homePick=false;els.homeMapBtn.textContent='地図で登録';document.querySelector('.home-shortcut')?.classList.remove('picking');showToast('この地点を自宅に登録しました');return;}
@@ -177,6 +178,38 @@ function drawPlannedRouteOnRideMap(){
 function clockTimeFromNow(seconds){const d=new Date(Date.now()+Math.max(0,seconds)*1000);return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;}
 function updatePlanNavigation(p){const plan=state.plannedRoute,prog=state.planProgress;if(!plan||!prog||!p){els.rideDestination.textContent=plan?.destination?.label||'フリーライド';els.rideRemaining.textContent='-- km';els.rideArrival.textContent='--:--';els.rideRouteState.textContent=plan?'GPS待機中':'ルート未設定';els.rideRouteState.classList.remove('offroute');els.rideUpcomingGrade.textContent='-- %';els.rideNextClimb.textContent='ルートを設定すると表示します';return;}const pts=plan.route||[];let bestI=0,bestD=Infinity;const last=prog.lastIndex||0;const lo=Math.max(0,last-120),hi=Math.min(pts.length,last+260);for(let i=lo;i<hi;i++){const d=haversine(p,pts[i]);if(d<bestD){bestD=d;bestI=i}}if(bestD>800){for(let i=0;i<pts.length;i+=4){const d=haversine(p,pts[i]);if(d<bestD){bestD=d;bestI=i}}}prog.lastIndex=bestI;const progressM=prog.cum[bestI]||0,remainingM=Math.max(0,prog.totalM-progressM);els.rideDestination.textContent=plan.destination?.label||'目的地';els.rideRemaining.textContent=`${(remainingM/1000).toFixed(1)} km`;let speedMps=0;if(state.ride.status!=='ready'){const elapsed=currentElapsed();if(elapsed>60&&state.ride.distanceM>300)speedMps=state.ride.distanceM/elapsed;}let remainS=speedMps>2?remainingM/speedMps:Number(plan.summary?.durationS||0)*(remainingM/Math.max(1,prog.totalM));els.rideArrival.textContent=clockTimeFromNow(remainS);const off=bestD>140;els.rideRouteState.textContent=off?`ルートから約 ${Math.round(bestD)}m 離れています`:`ROUTE ON ・ ${Math.round(progressM/100)/10}km地点`;els.rideRouteState.classList.toggle('offroute',off);let ahead=bestI;while(ahead<pts.length-1&&(prog.cum[ahead]-progressM)<150)ahead++;const a=pts[bestI],b=pts[ahead];const dist=Math.max(1,(prog.cum[ahead]||progressM)-progressM);const grade=Number.isFinite(a?.ele)&&Number.isFinite(b?.ele)?((b.ele-a.ele)/dist*100):0;els.rideUpcomingGrade.textContent=`${grade.toFixed(1)} %`;const climbs=plan.climbs||[];const next=climbs.filter(c=>Number(c.endKm)*1000>=progressM).sort((x,y)=>Number(x.startKm)-Number(y.startKm))[0];if(next){const toStart=Math.max(0,Number(next.startKm)*1000-progressM);els.rideNextClimb.textContent=toStart<150?`${Number(next.distanceKm).toFixed(1)}km / 平均 ${Number(next.avgGrade).toFixed(1)}% / MAX ${Number(next.maxGrade).toFixed(1)}%`:`${(toStart/1000).toFixed(1)}km先 ・ ${Number(next.distanceKm).toFixed(1)}km / 平均 ${Number(next.avgGrade).toFixed(1)}%`;}else els.rideNextClimb.textContent='この先にまとまった上りはありません';}
 
+
+function updateRideFollowButton(){
+  if(!els.centerRideBtn)return;
+  if(state.ride.status!=='recording'){els.centerRideBtn.textContent='現在地';els.centerRideBtn.classList.remove('follow-active','follow-paused');return;}
+  const paused=state.ride.followPauseUntil>Date.now();
+  els.centerRideBtn.textContent=paused?'追従再開':'追従 ON';
+  els.centerRideBtn.classList.toggle('follow-active',!paused);
+  els.centerRideBtn.classList.toggle('follow-paused',paused);
+}
+function pauseRideMapFollow(){
+  clearTimeout(state.ride.followTimer);
+  state.ride.followPauseUntil=Date.now()+10000;
+  updateRideFollowButton();
+  state.ride.followTimer=setTimeout(()=>{
+    state.ride.followPauseUntil=0;
+    updateRideFollowButton();
+    if(state.ride.status==='recording'&&state.currentPosition){followRideMap(state.currentPosition,true);showToast('地図の自動追従を再開しました');}
+  },10000);
+}
+function followRideMap(p,force=false){
+  if(!state.rideMap||!p||!Number.isFinite(Number(p.lat))||!Number.isFinite(Number(p.lng)))return;
+  if(state.ride.status!=='recording'&&!force)return;
+  if(!force&&state.ride.followPauseUntil>Date.now())return;
+  if(state.ride.followPauseUntil){state.ride.followPauseUntil=0;clearTimeout(state.ride.followTimer);state.ride.followTimer=null;updateRideFollowButton();}
+  const here=L.latLng(Number(p.lat),Number(p.lng));
+  const bounds=state.rideMap.getBounds();
+  const inner=bounds?.isValid?.()?bounds.pad(-0.27):null;
+  if(force||!inner||!inner.contains(here)){
+    state.rideMap.panTo(here,{animate:true,duration:.35,easeLinearity:.25});
+  }
+}
+
 async function acquireWakeLock(){try{if('wakeLock'in navigator){state.ride.wakeLock=await navigator.wakeLock.request('screen');els.wakeBadge.textContent='画面常時ON';els.wakeBadge.classList.add('on');state.ride.wakeLock.addEventListener('release',()=>{els.wakeBadge.textContent='画面常時ON --';els.wakeBadge.classList.remove('on')});}else{els.wakeBadge.textContent='常時ON非対応'}}catch{els.wakeBadge.textContent='画面常時ON失敗'}}
 async function releaseWakeLock(){try{await state.ride.wakeLock?.release()}catch{}state.ride.wakeLock=null;}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&state.ride.status==='recording')acquireWakeLock()});
@@ -188,7 +221,7 @@ function startPositionWatch(){
 function stopPositionWatch(){if(state.ride.watchId!==null){navigator.geolocation.clearWatch(state.ride.watchId);state.ride.watchId=null}}
 function onRidePosition(pos){
   const c=pos.coords;const p={lat:c.latitude,lng:c.longitude,accuracy:c.accuracy,alt:Number.isFinite(c.altitude)?c.altitude:null,speed:Number.isFinite(c.speed)?c.speed:null,ts:pos.timestamp};state.currentPosition={lat:p.lat,lng:p.lng,accuracy:p.accuracy,altitude:p.alt};els.gpsBadge.textContent=`GPS ±${Math.round(p.accuracy)}m`;els.gpsBadge.classList.add('ok');
-  if(state.rideMap){if(state.rideCurrentMarker)state.rideCurrentMarker.setLatLng([p.lat,p.lng]);else state.rideCurrentMarker=L.circleMarker([p.lat,p.lng],{radius:8,color:'#102f53',weight:3,fillColor:'#fff',fillOpacity:1}).addTo(state.rideMap)}
+  if(state.rideMap){if(state.rideCurrentMarker)state.rideCurrentMarker.setLatLng([p.lat,p.lng]);else state.rideCurrentMarker=L.circleMarker([p.lat,p.lng],{radius:8,color:'#102f53',weight:3,fillColor:'#fff',fillOpacity:1}).addTo(state.rideMap);followRideMap(p)}
   updatePlanNavigation(p);if(state.ride.status!=='recording'){if(Number.isFinite(p.speed)&&p.speed>=0)els.liveSpeed.textContent=Math.min(p.speed*3.6,99.9).toFixed(1);return;}if(p.accuracy>90)return;const last=state.ride.lastAccepted;if(last){const d=haversine(last,p),dt=(p.ts-last.ts)/1000;const calcSpeed=dt>0?d/dt:0;if(calcSpeed>25)return;if(d<2&&dt<5)return;state.ride.distanceM+=d;let kmh=Number.isFinite(p.speed)&&p.speed>=0?p.speed*3.6:calcSpeed*3.6;if(kmh<80)state.ride.maxSpeedKmh=Math.max(state.ride.maxSpeedKmh,kmh);if(Number.isFinite(last.alt)&&Number.isFinite(p.alt)){const rise=p.alt-last.alt;if(rise>2&&rise<25)state.ride.ascentM+=rise;}}
   state.ride.points.push(p);state.ride.lastAccepted=p;updateLiveRide(p);drawLiveTrack();
 }
@@ -196,17 +229,17 @@ function updateLiveRide(p){const last=state.ride.points.length>1?state.ride.poin
 function drawLiveTrack(){if(!state.rideMap)return;const pts=state.ride.points;if(state.rideTrackLayer)state.rideTrackLayer.remove();if(pts.length>1)state.rideTrackLayer=L.polyline(pts.map(p=>[p.lat,p.lng]),{color:'#e24444',weight:6,opacity:.9}).addTo(state.rideMap);}
 function currentElapsed(){if(!state.ride.startTs)return 0;const now=state.ride.status==='paused'?state.ride.pauseStarted:Date.now();return Math.max(0,(now-state.ride.startTs-state.ride.pausedMs)/1000)}
 function tickRide(){els.liveDuration.textContent=fmtDuration(currentElapsed());if(state.currentPosition)updatePlanNavigation(state.currentPosition)}
-function resetRideState(){stopPositionWatch();clearInterval(state.ride.timer);releaseWakeLock();state.ride={status:'ready',watchId:null,startTs:0,pauseStarted:0,pausedMs:0,points:[],distanceM:0,ascentM:0,maxSpeedKmh:0,lastAccepted:null,timer:null,wakeLock:null};els.liveSpeed.textContent='0.0';els.liveDistance.textContent='0.00 km';els.liveDuration.textContent='00:00:00';els.liveAvgSpeed.textContent='0.0 km/h';els.liveAscent.textContent='0 m';els.liveMaxSpeed.textContent='0.0 km/h';els.rideStateTitle.textContent='READY';els.startRideBtn.textContent='START';els.startRideBtn.disabled=false;els.pauseRideBtn.disabled=true;els.pauseRideBtn.textContent='PAUSE';els.finishRideBtn.disabled=true;if(state.rideTrackLayer){state.rideTrackLayer.remove();state.rideTrackLayer=null}updatePlanNavigation(state.currentPosition)}
+function resetRideState(){stopPositionWatch();clearInterval(state.ride.timer);clearTimeout(state.ride.followTimer);releaseWakeLock();state.ride={status:'ready',watchId:null,startTs:0,pauseStarted:0,pausedMs:0,points:[],distanceM:0,ascentM:0,maxSpeedKmh:0,lastAccepted:null,timer:null,wakeLock:null,followPauseUntil:0,followTimer:null};els.liveSpeed.textContent='0.0';els.liveDistance.textContent='0.00 km';els.liveDuration.textContent='00:00:00';els.liveAvgSpeed.textContent='0.0 km/h';els.liveAscent.textContent='0 m';els.liveMaxSpeed.textContent='0.0 km/h';els.rideStateTitle.textContent='READY';els.startRideBtn.textContent='START';els.startRideBtn.disabled=false;els.pauseRideBtn.disabled=true;els.pauseRideBtn.textContent='PAUSE';els.finishRideBtn.disabled=true;updateRideFollowButton();if(state.rideTrackLayer){state.rideTrackLayer.remove();state.rideTrackLayer=null}updatePlanNavigation(state.currentPosition)}
 
 els.startRideBtn.addEventListener('click',async()=>{
-  if(state.ride.status==='paused'){state.ride.pausedMs+=Date.now()-state.ride.pauseStarted;state.ride.pauseStarted=0;state.ride.status='recording';els.rideStateTitle.textContent='RIDING';els.startRideBtn.disabled=true;els.pauseRideBtn.disabled=false;els.pauseRideBtn.textContent='PAUSE';startPositionWatch();acquireWakeLock();return}
+  if(state.ride.status==='paused'){state.ride.pausedMs+=Date.now()-state.ride.pauseStarted;state.ride.pauseStarted=0;state.ride.status='recording';state.ride.followPauseUntil=0;clearTimeout(state.ride.followTimer);state.ride.followTimer=null;els.rideStateTitle.textContent='RIDING';els.startRideBtn.disabled=true;els.pauseRideBtn.disabled=false;els.pauseRideBtn.textContent='PAUSE';updateRideFollowButton();startPositionWatch();acquireWakeLock();if(state.currentPosition)followRideMap(state.currentPosition,true);return}
   if(state.ride.status!=='ready')return;
   try{await getCurrentPosition(false)}catch(e){showToast(e.message);return}
-  state.ride.status='recording';state.ride.startTs=Date.now();state.ride.points=[];state.ride.distanceM=0;state.ride.ascentM=0;state.ride.maxSpeedKmh=0;state.ride.lastAccepted=null;els.rideStateTitle.textContent='RIDING';els.startRideBtn.disabled=true;els.pauseRideBtn.disabled=false;els.finishRideBtn.disabled=false;state.ride.timer=setInterval(tickRide,1000);tickRide();startPositionWatch();acquireWakeLock();if(state.rideMap){state.rideMap.invalidateSize({animate:false});syncRideMapView({preferCurrent:true});}showToast('走行記録を開始しました');
+  state.ride.status='recording';state.ride.startTs=Date.now();state.ride.points=[];state.ride.distanceM=0;state.ride.ascentM=0;state.ride.maxSpeedKmh=0;state.ride.lastAccepted=null;state.ride.followPauseUntil=0;clearTimeout(state.ride.followTimer);state.ride.followTimer=null;els.rideStateTitle.textContent='RIDING';els.startRideBtn.disabled=true;els.pauseRideBtn.disabled=false;els.finishRideBtn.disabled=false;updateRideFollowButton();state.ride.timer=setInterval(tickRide,1000);tickRide();startPositionWatch();acquireWakeLock();if(state.rideMap){state.rideMap.invalidateSize({animate:false});syncRideMapView({preferCurrent:true});if(state.currentPosition)followRideMap(state.currentPosition,true);}showToast('走行記録を開始しました・地図追従ON');
 });
-els.pauseRideBtn.addEventListener('click',()=>{if(state.ride.status!=='recording')return;state.ride.status='paused';state.ride.pauseStarted=Date.now();stopPositionWatch();releaseWakeLock();els.rideStateTitle.textContent='PAUSED';els.startRideBtn.disabled=false;els.startRideBtn.textContent='RESUME';els.pauseRideBtn.disabled=true;showToast('一時停止しました');});
+els.pauseRideBtn.addEventListener('click',()=>{if(state.ride.status!=='recording')return;state.ride.status='paused';state.ride.pauseStarted=Date.now();clearTimeout(state.ride.followTimer);state.ride.followTimer=null;state.ride.followPauseUntil=0;stopPositionWatch();releaseWakeLock();els.rideStateTitle.textContent='PAUSED';els.startRideBtn.disabled=false;els.startRideBtn.textContent='RESUME';els.pauseRideBtn.disabled=true;updateRideFollowButton();showToast('一時停止しました');});
 els.finishRideBtn.addEventListener('click',async()=>{if(!['recording','paused'].includes(state.ride.status))return;if(!confirm('走行を終了して記録を保存しますか？'))return;const elapsed=currentElapsed();stopPositionWatch();clearInterval(state.ride.timer);await releaseWakeLock();const ride={id:`ride_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,startedAt:new Date(state.ride.startTs).toISOString(),endedAt:new Date().toISOString(),durationS:Math.round(elapsed),distanceM:Math.round(state.ride.distanceM),ascentM:Math.round(state.ride.ascentM),maxSpeedKmh:Number(state.ride.maxSpeedKmh.toFixed(1)),avgSpeedKmh:elapsed>0?Number((state.ride.distanceM/1000/(elapsed/3600)).toFixed(1)):0,points:state.ride.points,plannedDestination:state.plannedRoute?.destination?.label||null,plannedMode:state.plannedRoute?.selection?.mode||null};await RideDB.put(ride);resetRideState();setPlannedRoute(null,false);showToast('走行記録を保存しました');switchTab('log');});
-els.centerRideBtn.addEventListener('click',()=>{if(state.rideMap){state.rideMap.invalidateSize({animate:false});syncRideMapView({preferCurrent:true});}});
+els.centerRideBtn.addEventListener('click',()=>{if(!state.rideMap)return;state.ride.followPauseUntil=0;clearTimeout(state.ride.followTimer);state.ride.followTimer=null;updateRideFollowButton();state.rideMap.invalidateSize({animate:false});if(state.currentPosition){if(state.ride.status==='recording')followRideMap(state.currentPosition,true);else syncRideMapView({preferCurrent:true});}else syncRideMapView({preferCurrent:true});});
 
 const RideDB={
   db:null,
@@ -227,7 +260,7 @@ els.importAllInput.addEventListener('change',async()=>{const f=els.importAllInpu
 
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();state.installPrompt=e;els.installBtn.hidden=false});els.installBtn.addEventListener('click',async()=>{if(!state.installPrompt)return;state.installPrompt.prompt();await state.installPrompt.userChoice;state.installPrompt=null;els.installBtn.hidden=true});
 
-async function registerSW(){if('serviceWorker'in navigator)try{await navigator.serviceWorker.register('./service-worker.js?v=140')}catch{}}
+async function registerSW(){if('serviceWorker'in navigator)try{await navigator.serviceWorker.register('./service-worker.js?v=150')}catch{}}
 
 async function boot(){initMaps();loadHome();restorePlannedRoute();registerSW();RideDB.open().catch(()=>{});renderRideLog();getCurrentPosition(false).then(()=>{drawHomeMarker();updatePlanNavigation(state.currentPosition)}).catch(()=>{});console.info(`YOSHI RIDE v${CONFIG.build}`)}
 boot();
