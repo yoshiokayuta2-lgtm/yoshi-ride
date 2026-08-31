@@ -48,3 +48,33 @@
 .ride-follow-btn.follow-active{background:#e8f3ed;border-color:#b9d7c6;color:#256443}
 .ride-follow-btn.follow-paused{background:#fff5e8;border-color:#e7c89a;color:#8a5a18}
 .ride-map-help{margin:8px 2px 0;color:#7d8d99;font-size:9px;line-height:1.5}
+
+/* v1.6 - cockpit RIDE layout */
+.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.ride-cockpit{padding:18px;border-radius:28px;background:linear-gradient(150deg,#0b1c30,#163b62);color:#fff;box-shadow:var(--shadow);margin-bottom:16px}
+.ride-cockpit-head{height:42px;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.ride-state-block{min-width:0}.ride-state-line{display:flex;align-items:center;gap:10px}.ride-state-line h2{margin:1px 0 0;font-size:20px;letter-spacing:.04em}.ride-cockpit-head .wake-badge{min-height:28px;padding:0 9px;font-size:9px}.ride-cockpit-head .ride-mascot{width:64px;max-height:48px;object-fit:contain;object-position:center}
+.ride-map-shell{position:relative;border-radius:20px;overflow:hidden;background:#dfe6eb;isolation:isolate}.ride-map-shell .ride-map{height:460px;border-radius:20px}
+.ride-map-topbar{position:absolute;z-index:500;left:10px;right:10px;top:10px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;pointer-events:none}.ride-map-topbar>*{pointer-events:auto}.ride-map-topbar .ride-destination{min-width:0;max-width:68%;padding:8px 10px;border:1px solid rgba(255,255,255,.22);border-radius:13px;background:rgba(11,28,48,.86);box-shadow:0 5px 18px rgba(0,0,0,.18);backdrop-filter:blur(8px)}.ride-map-topbar .ride-destination span{display:block;color:#9fb5c8;font-size:7px;font-weight:900;letter-spacing:.08em}.ride-map-topbar .ride-destination strong{display:block;margin-top:2px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ride-map-topbar .ride-destination small{display:block;margin-top:2px;color:#c5d4df;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ride-map-topbar .ride-destination small.offroute{color:#ff9c9c;font-weight:900}
+.ride-follow-btn{min-height:38px;padding:0 11px;border:1px solid rgba(255,255,255,.34);border-radius:12px;background:rgba(11,28,48,.86);color:#fff;font-size:10px;font-weight:900;box-shadow:0 5px 18px rgba(0,0,0,.18);backdrop-filter:blur(8px)}.ride-follow-btn.follow-active{background:rgba(31,119,80,.90);border-color:rgba(166,235,199,.55)}.ride-follow-btn.follow-paused{background:rgba(183,105,35,.92)}
+.ride-speed-overlay{position:absolute;z-index:490;left:12px;bottom:58px;display:flex;align-items:baseline;gap:6px;padding:8px 12px 9px;border:1px solid rgba(255,255,255,.24);border-radius:15px;background:rgba(11,28,48,.84);color:#fff;box-shadow:0 6px 20px rgba(0,0,0,.18);backdrop-filter:blur(8px);pointer-events:none}.ride-speed-overlay strong{font-size:54px;line-height:.88;letter-spacing:-.05em}.ride-speed-overlay span{font-size:9px;font-weight:900;color:#c5d4df}
+.ride-map-metrics{position:absolute;z-index:490;left:10px;right:10px;bottom:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;pointer-events:none}.ride-map-metrics>div{min-width:0;padding:7px 9px;border:1px solid rgba(255,255,255,.22);border-radius:11px;background:rgba(11,28,48,.84);color:#fff;backdrop-filter:blur(8px)}.ride-map-metrics span{display:block;color:#a9bdce;font-size:7px;font-weight:900}.ride-map-metrics strong{display:block;margin-top:1px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ride-quick-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:9px}.ride-quick-stats>div{min-width:0;padding:9px 8px;border:1px solid rgba(255,255,255,.10);border-radius:12px;background:rgba(255,255,255,.07)}.ride-quick-stats span{display:block;color:#aabdd0;font-size:7px}.ride-quick-stats strong{display:block;margin-top:3px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ride-cockpit .next-climb-card{margin-top:7px;padding:8px 10px}.ride-cockpit .ride-controls{margin-top:8px}.ride-cockpit .ride-controls button{height:46px}.ride-cockpit .ride-note{margin-top:6px}.ride-cockpit .leaflet-control-layers{margin-top:58px}
+body.ride-mode .app-header{display:none}body.ride-mode .tabs{margin-top:calc(6px + env(safe-area-inset-top));margin-bottom:8px}
+@media(max-width:720px){
+  body.ride-mode #app{padding-left:8px;padding-right:8px;padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+  .ride-cockpit{padding:10px;border-radius:22px;margin-bottom:8px}
+  .ride-cockpit-head{height:31px;margin-bottom:7px}.ride-state-line h2{font-size:17px}.ride-cockpit-head .wake-badge{min-height:24px;font-size:8px}.ride-cockpit-head .ride-mascot{width:48px;max-height:36px}
+  .ride-map-shell .ride-map{height:clamp(300px,46vh,390px)}
+  .ride-map-topbar{left:7px;right:7px;top:7px}.ride-map-topbar .ride-destination{max-width:72%;padding:6px 8px}.ride-follow-btn{min-height:34px;padding:0 9px;font-size:9px}
+  .ride-speed-overlay{left:8px;bottom:52px;padding:6px 10px 7px}.ride-speed-overlay strong{font-size:46px}.ride-speed-overlay span{font-size:8px}
+  .ride-map-metrics{left:7px;right:7px;bottom:7px;gap:4px}.ride-map-metrics>div{padding:6px 7px}.ride-map-metrics strong{font-size:12px}
+  .ride-quick-stats{grid-template-columns:repeat(5,1fr);gap:4px;margin-top:6px}.ride-quick-stats>div{padding:7px 5px;border-radius:10px;text-align:center}.ride-quick-stats span{font-size:6px}.ride-quick-stats strong{font-size:9px}
+  .ride-cockpit .next-climb-card{margin-top:5px;padding:7px 9px}.ride-cockpit .next-climb-card strong{font-size:9px}.ride-cockpit .next-climb-card span{font-size:7px}
+  .ride-cockpit .ride-controls{grid-template-columns:1.4fr 1fr 1fr;gap:5px;margin-top:6px}.ride-cockpit .ride-start{grid-column:auto}.ride-cockpit .ride-controls button{height:42px;border-radius:12px;font-size:11px}
+  .ride-cockpit .ride-note{display:none}
+}
+@media(max-width:390px){
+  .ride-map-shell .ride-map{height:clamp(285px,44vh,350px)}
+  .ride-speed-overlay strong{font-size:42px}.ride-quick-stats strong{font-size:8px}.ride-cockpit-head .ride-mascot{display:none}
+}
