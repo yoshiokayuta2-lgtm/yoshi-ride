@@ -1,23 +1,20 @@
-YOSHI RIDE v1.4 更新手順
+YOSHI RIDE v1.7 update steps
 
-【今回の更新はGitHubだけです】
-1) yoshi-ride リポジトリに、このZIPの中身を上書きアップロード
-2) main ブランチへ Commit
-3) GitHub Pages の反映後、ページを再読み込み
-4) Console に YOSHI RIDE v1.4.0 と出れば最新版です
+1. GitHub Pages
+- Upload and overwrite all files in this ZIP to the yoshi-ride repository.
+- Commit to main and wait for GitHub Pages deployment.
 
-※ Supabase Edge Function cycle-route の更新は不要です。
-※ ORS_API_KEY / JWT設定も変更不要です。
+2. Supabase Edge Function (required in v1.7)
+- Open Edge Functions > cycle-route > Code.
+- Replace index.ts with: supabase/functions/cycle-route/index.ts
+- Deploy function.
+- Keep Verify JWT with legacy secret OFF.
+- ORS_API_KEY stays unchanged.
 
-v1.4変更点
-- ROUTE上部にYOSHI + FELT F85の挿絵を追加
-- RIDEに小さなキャラクター挿絵を追加
-- LOG未記録時にもワンポイント表示
-- RIDEタブを開いた後にLeaflet地図のサイズを再計算
-- ルート設定済みなら「現在地＋目的地＋ルート全体」へ自動フィット
-- 目的地未設定なら現在地中心へ自動表示
-- ルート上の不正座標を除外してワールド表示を防止
-- RIDE地図に目的地マーカーを追加
+3. After deployment
+- Reload YOSHI RIDE.
+- Console should show YOSHI RIDE v1.7.0.
+- Recalculate the route once. Old v1.6 stored routes do not contain turn instructions.
+- In RIDE, tap Voice OFF to switch it to Voice ON before START.
 
-
-v1.5: GitHub Pages側のみ更新。Supabase cycle-routeは変更不要です。
+Voice guidance triggers at roughly 200 m, 50 m, and immediately before a turn, plus off-route and arrival alerts.

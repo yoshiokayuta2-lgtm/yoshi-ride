@@ -117,3 +117,14 @@ GitHub Pages側の全ファイルを上書きし、Supabase Edge Function `cycle
 - 地図目的地は設定後も「目的地を変更」から再指定可能。
 - 目的地マーカーをドラッグして位置変更可能。変更時は古いルートプレビューを解除して再計算を促す。
 - Supabase / cycle-route の更新は不要（フロントのみ）。
+
+
+## v1.7.0 TURN-BY-TURN + VOICE
+- RIDE map shows the next maneuver, distance to turn, and road name.
+- Voice guidance: about 200 m before, 50 m before, and immediately before a turn.
+- Voice alerts for route deviation, route recovery, and destination arrival.
+- Voice can be toggled ON/OFF from the RIDE map and the preference is stored on the device.
+- OpenRouteService turn instructions are converted to compact navigation data in the Edge Function.
+- Existing v1.6 saved routes do not contain maneuver data; recalculate the route once after updating.
+- This version requires redeploying Supabase Edge Function `cycle-route` in addition to updating GitHub Pages.
+- Keep the PWA in the foreground for the most reliable voice guidance.

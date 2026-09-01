@@ -40,10 +40,38 @@ function makeProfiles(coords:any[]){
   function finish(c:any){const d=c.endKm-c.startKm;if(d<.25)return;const first=c.samples[0],last=c.samples[c.samples.length-1];c.gainM=Math.max(0,last.ele-first.ele);c.distanceKm=d;c.avgGrade=d>0?c.gainM/(d*1000)*100:0;if(c.avgGrade>=2.3)climbs.push(c)}
   climbs.sort((a,b)=>(b.gainM+b.maxGrade*8)-(a.gainM+a.maxGrade*8));return {route:downsample(pts,1400),elevationProfile:sparse,maxGrade,climbs:climbs.slice(0,10)};
 }
+function extractManeuvers(feature:any){
+  const coords=Array.isArray(feature?.geometry?.coordinates)?feature.geometry.coordinates:[];
+  if(!coords.length)return [];
+  const cum=[0];
+  for(let i=1;i<coords.length;i++)cum[i]=cum[i-1]+haversine({lat:Number(coords[i-1][1]),lng:Number(coords[i-1][0])},{lat:Number(coords[i][1]),lng:Number(coords[i][0])});
+  const out:any[]=[];const segments=Array.isArray(feature?.properties?.segments)?feature.properties.segments:[];
+  for(const segment of segments){
+    const steps=Array.isArray(segment?.steps)?segment.steps:[];
+    for(const step of steps){
+      const type=Number(step?.type);if(!Number.isFinite(type)||type===11)continue;
+      const wp=Array.isArray(step?.way_points)?step.way_points:[];
+      const rawIndex=type===10?Number(wp[1]??coords.length-1):Number(wp[0]??0);
+      const idx=Math.max(0,Math.min(coords.length-1,Number.isFinite(rawIndex)?Math.round(rawIndex):0));
+      const c=coords[idx];if(!Array.isArray(c)||c.length<2)continue;
+      out.push({
+        type,
+        progressM:Math.round(cum[idx]||0),
+        routeIndex:idx,
+        lat:Number(c[1]),lng:Number(c[0]),
+        name:String(step?.name||'').trim(),
+        instruction:String(step?.instruction||'').trim(),
+      });
+    }
+  }
+  const dedup:any[]=[];const seen=new Set<string>();
+  for(const m of out){const key=`${m.type}|${m.progressM}|${m.name}`;if(seen.has(key))continue;seen.add(key);dedup.push(m);}
+  return dedup;
+}
 function metrics(feature:any){
   const props=feature?.properties||{}, summary=props.summary||{}, extras=props.extras||{};const wt=extra(extras,['waytypes','waytype']),sf=extra(extras,['surface','surfaces']),suit=extra(extras,['suitability']);
-  const cyclewayPct=summaryAmount(wt,[6]);const pavedPct=summaryAmount(sf,[1,3,4,14]);const stateRoadPct=summaryAmount(wt,[1]);const suitabilityPct=summaryAmount(suit,[8,9,10]);const profile=makeProfiles(feature?.geometry?.coordinates||[]);
-  return {distanceM:Number(summary.distance||0),durationS:Number(summary.duration||0),ascentM:Number(summary.ascent||0),descentM:Number(summary.descent||0),cyclewayPct,pavedPct,stateRoadPct,suitabilityPct,...profile};
+  const cyclewayPct=summaryAmount(wt,[6]);const pavedPct=summaryAmount(sf,[1,3,4,14]);const stateRoadPct=summaryAmount(wt,[1]);const suitabilityPct=summaryAmount(suit,[8,9,10]);const profile=makeProfiles(feature?.geometry?.coordinates||[]);const maneuvers=extractManeuvers(feature);
+  return {distanceM:Number(summary.distance||0),durationS:Number(summary.duration||0),ascentM:Number(summary.ascent||0),descentM:Number(summary.descent||0),cyclewayPct,pavedPct,stateRoadPct,suitabilityPct,maneuvers,...profile};
 }
 
 const PLACE_CATEGORIES: Record<string, { label: string; clauses: string[]; orsIds: number[]; fallback: string }> = {
@@ -210,7 +238,7 @@ async function searchPlaces(origin:{lat:number,lng:number},category:string,radiu
 }
 
 async function recommendationRoute(origin:{lat:number,lng:number}, destination:{lat:number,lng:number}, purpose:string){
-  const requestBody:any={coordinates:[[origin.lng,origin.lat],[destination.lng,destination.lat]],elevation:true,instructions:false,preference:'recommended',extra_info:['steepness','waytype','surface','suitability'],options:{avoid_features:['steps','ferries','fords']}};
+  const requestBody:any={coordinates:[[origin.lng,origin.lat],[destination.lng,destination.lat]],elevation:true,instructions:true,instructions_format:'text',preference:'recommended',extra_info:['steepness','waytype','surface','suitability'],options:{avoid_features:['steps','ferries','fords']}};
   if(purpose==='training')requestBody.options.profile_params={weightings:{steepness_difficulty:3}};
   const res=await fetch('https://api.openrouteservice.org/v2/directions/cycling-road/geojson',{method:'POST',headers:{Authorization:ORS_API_KEY,'Content-Type':'application/json'},body:JSON.stringify(requestBody)});
   const data=await res.json().catch(()=>({}));
@@ -242,7 +270,7 @@ async function recommendCourses(origin:{lat:number,lng:number}, minutesValue:num
   const reasonable=routes.filter((x:any)=>x.m.durationS>=targetS*.48&&x.m.durationS<=targetS*1.75);if(reasonable.length>=2)routes=reasonable;
   routes.sort((a:any,b:any)=>a.score-b.score);const picked=routes.slice(0,3);
   const candidates=[];
-  for(let i=0;i<picked.length;i++){const x=picked[i];const dir=directionName(x.bearing);const area=await reverseLabel(x.destination,`${dir}方面`);const label=area.includes(dir)?area:`${area}・${dir}方面`;const m=x.m;const reason=purpose==='training'?`片道${minutes}分目安 / 獲得${Math.round(m.ascentM)}m・最大${m.maxGrade.toFixed(1)}%`:`片道${minutes}分目安 / cycleway ${Math.round(m.cyclewayPct)}%・舗装 ${Math.round(m.pavedPct)}%`;candidates.push({destination:{lat:x.destination.lat,lng:x.destination.lng,label},summary:{distanceM:Math.round(m.distanceM),durationS:Math.round(m.durationS),ascentM:Math.round(m.ascentM),descentM:Math.round(m.descentM),maxGrade:Number(m.maxGrade.toFixed(1)),cyclewayPct:Number(m.cyclewayPct.toFixed(1)),pavedPct:Number(m.pavedPct.toFixed(1))},route:downsample(m.route,900),elevationProfile:downsample(m.elevationProfile,320),climbs:(m.climbs||[]).slice(0,8),selection:{mode:purpose==='training'?'hill':'cycleway',purpose,minutes,reason,candidateCount:routes.length}});}
+  for(let i=0;i<picked.length;i++){const x=picked[i];const dir=directionName(x.bearing);const area=await reverseLabel(x.destination,`${dir}方面`);const label=area.includes(dir)?area:`${area}・${dir}方面`;const m=x.m;const reason=purpose==='training'?`片道${minutes}分目安 / 獲得${Math.round(m.ascentM)}m・最大${m.maxGrade.toFixed(1)}%`:`片道${minutes}分目安 / cycleway ${Math.round(m.cyclewayPct)}%・舗装 ${Math.round(m.pavedPct)}%`;candidates.push({destination:{lat:x.destination.lat,lng:x.destination.lng,label},summary:{distanceM:Math.round(m.distanceM),durationS:Math.round(m.durationS),ascentM:Math.round(m.ascentM),descentM:Math.round(m.descentM),maxGrade:Number(m.maxGrade.toFixed(1)),cyclewayPct:Number(m.cyclewayPct.toFixed(1)),pavedPct:Number(m.pavedPct.toFixed(1))},route:downsample(m.route,900),elevationProfile:downsample(m.elevationProfile,320),climbs:(m.climbs||[]).slice(0,8),maneuvers:(m.maneuvers||[]),selection:{mode:purpose==='training'?'hill':'cycleway',purpose,minutes,reason,candidateCount:routes.length}});}
   return {purpose,minutes,targetDurationS:targetS,candidates};
 }
 
@@ -266,12 +294,12 @@ Deno.serve(async (req:Request)=>{
     if(body?.action==='recommend'){const result=await recommendCourses({lat:originLat,lng:originLng},Number(body?.minutes||60),String(body?.purpose||'leisure'));return json(req,result);}
     let destination:any;const dl=finite(body?.destination?.lat),dg=finite(body?.destination?.lng);if(dl!==null&&dg!==null)destination={lat:dl,lng:dg,label:String(body?.destination?.label||'地図で指定')};else{const text=String(body?.destination?.text||'').trim();if(!text)throw new Error('目的地を入力してください。');destination=await geocode(text)}
     const mode=['balanced','cycleway','hill'].includes(body?.mode)?body.mode:'balanced';const hillLevel=Math.min(3,Math.max(1,Math.round(Number(body?.hillLevel||2))));const beeline=haversine({lat:originLat,lng:originLng},destination);const useAlternatives=mode!=='balanced'&&beeline<65000;
-    const requestBody:any={coordinates:[[originLng,originLat],[destination.lng,destination.lat]],elevation:true,instructions:false,preference:'recommended',extra_info:['steepness','waytype','surface','suitability'],options:{avoid_features:['steps','ferries','fords']}};
+    const requestBody:any={coordinates:[[originLng,originLat],[destination.lng,destination.lat]],elevation:true,instructions:true,instructions_format:'text',preference:'recommended',extra_info:['steepness','waytype','surface','suitability'],options:{avoid_features:['steps','ferries','fords']}};
     if(mode==='hill')requestBody.options.profile_params={weightings:{steepness_difficulty:hillLevel}};
     if(useAlternatives)requestBody.alternative_routes={target_count:3,share_factor:.72,weight_factor:1.9};
     const routeRes=await fetch('https://api.openrouteservice.org/v2/directions/cycling-road/geojson',{method:'POST',headers:{Authorization:ORS_API_KEY,'Content-Type':'application/json'},body:JSON.stringify(requestBody)});const routeJson=await routeRes.json().catch(()=>({}));
     if(!routeRes.ok){const detail=routeJson?.error?.message||routeJson?.error||`HTTP ${routeRes.status}`;throw new Error(`自転車ルートを計算できませんでした: ${detail}`)}
     const features=routeJson?.features||[];const selected=selectCandidate(features,mode);const m=selected.best.m;const fallbackNote=mode!=='balanced'&&!useAlternatives?'（長距離のため代替ルート比較なし）':'';
-    return json(req,{destination,summary:{distanceM:Math.round(m.distanceM),durationS:Math.round(m.durationS),ascentM:Math.round(m.ascentM),descentM:Math.round(m.descentM),maxGrade:Number(m.maxGrade.toFixed(1)),cyclewayPct:Number(m.cyclewayPct.toFixed(1)),pavedPct:Number(m.pavedPct.toFixed(1))},route:m.route,elevationProfile:m.elevationProfile,climbs:m.climbs,selection:{mode,hillLevel,candidateCount:selected.candidates.length,reason:selected.reason+fallbackNote},calculatedAt:new Date().toISOString()});
+    return json(req,{destination,summary:{distanceM:Math.round(m.distanceM),durationS:Math.round(m.durationS),ascentM:Math.round(m.ascentM),descentM:Math.round(m.descentM),maxGrade:Number(m.maxGrade.toFixed(1)),cyclewayPct:Number(m.cyclewayPct.toFixed(1)),pavedPct:Number(m.pavedPct.toFixed(1))},route:m.route,elevationProfile:m.elevationProfile,climbs:m.climbs,maneuvers:m.maneuvers,selection:{mode,hillLevel,candidateCount:selected.candidates.length,reason:selected.reason+fallbackNote},calculatedAt:new Date().toISOString()});
   }catch(error){console.error(error);return json(req,{error:error instanceof Error?error.message:'ルート計算に失敗しました。'},500)}
 });
